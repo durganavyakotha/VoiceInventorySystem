@@ -31,13 +31,16 @@ public interface UserRepository extends JpaRepository<User, Long> {
     @Query("SELECT u FROM User u WHERE u.role = :role AND " +
             "(:location IS NULL OR LOWER(u.location) LIKE LOWER(CONCAT('%', :location, '%'))) AND " +
             "(:status IS NULL OR u.status = :status) AND " +
+            "(:language IS NULL OR LOWER(u.language) = LOWER(:language) OR " +
+            "LOWER(u.language) LIKE LOWER(CONCAT(:language, '%'))) AND " +
             "(:search IS NULL OR LOWER(u.firstName) LIKE LOWER(CONCAT('%', :search, '%')) OR " +
             "LOWER(u.lastName) LIKE LOWER(CONCAT('%', :search, '%')) OR " +
             "LOWER(u.email) LIKE LOWER(CONCAT('%', :search, '%')))")
     List<User> searchUsers(@Param("role") Role role,
                            @Param("location") String location,
                            @Param("status") UserStatus status,
-                           @Param("search") String search);
+                           @Param("search") String search,
+                           @Param("language") String language);
 
     @Query("SELECT u.location, COUNT(u) FROM User u WHERE u.role = :role GROUP BY u.location")
     List<Object[]> countByRoleGroupedByLocation(@Param("role") Role role);

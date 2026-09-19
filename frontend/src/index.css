@@ -766,7 +766,7 @@ table.data-table tr:hover td {
 .status-pill.low_stock { color: var(--warn); }
 .status-pill.out_of_stock { color: var(--danger); }
 
-/* Vendor grid — 4 per row */
+/* Vendor grid - 4 per row */
 .vendor-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -843,4 +843,32 @@ table.data-table tr:hover td {
   height: 220px;
   border: 1px solid var(--line);
   border-radius: 12px;
+}
+
+.chatbot-panel { max-width: 720px; }
+.chatbot-messages {
+  max-height: 280px;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.5rem;
+  background: rgba(11, 110, 110, 0.04);
+  border-radius: 12px;
+}
+.chatbot-bubble {
+  max-width: 85%;
+  padding: 0.65rem 0.9rem;
+  border-radius: 14px;
+  font-size: 0.95rem;
+}
+.chatbot-bubble.user {
+  align-self: flex-end;
+  background: var(--teal);
+  color: #fff;
+}
+.chatbot-bubble.bot {
+  align-self: flex-start;
+  background: #fff;
+  border: 1px solid var(--line);
 }

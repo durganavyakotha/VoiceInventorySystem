@@ -25,4 +25,8 @@ public class InventoryRequest {
 
     /** Unit: kg, packets, bottles, pieces, bags, L, etc. */
     private String unit;
+
+    /** Cost per unit. */
+    @Min(0)
+    private Double costPerUnit;
 }

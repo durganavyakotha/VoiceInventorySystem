@@ -100,6 +100,9 @@ public class InventoryService {
         if (request.getUnit() != null && !request.getUnit().isBlank()) {
             item.setUnit(unit);
         }
+        if (request.getCostPerUnit() != null) {
+            item.setCostPerUnit(request.getCostPerUnit());
+        }
         if (request.getThreshold() != null) {
             item.setThreshold(request.getThreshold());
         }

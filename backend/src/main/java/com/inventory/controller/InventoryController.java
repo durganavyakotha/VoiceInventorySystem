@@ -56,6 +56,7 @@ public class InventoryController {
             @RequestParam(required = false) String category,
             @RequestParam(required = false) Integer threshold,
             @RequestParam(required = false) String barcode,
+            @RequestParam(required = false) Double costPerUnit,
             @RequestParam("file") MultipartFile file) {
         String imageUrl = inventoryService.storeProductImage(file);
         InventoryRequest request = new InventoryRequest();
@@ -65,6 +66,7 @@ public class InventoryController {
         request.setCategory(category);
         request.setThreshold(threshold);
         request.setBarcode(barcode);
+        request.setCostPerUnit(costPerUnit);
         request.setImageUrl(imageUrl);
         return ResponseEntity.ok(inventoryService.addOrUpdate(request));
     }

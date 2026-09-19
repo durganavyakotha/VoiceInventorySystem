@@ -26,16 +26,18 @@ public class AdminController {
     public ResponseEntity<List<UserResponse>> vendors(
             @RequestParam(required = false) String search,
             @RequestParam(required = false) String location,
-            @RequestParam(required = false) UserStatus status) {
-        return ResponseEntity.ok(userService.listByRole(Role.VENDOR, search, location, status));
+            @RequestParam(required = false) UserStatus status,
+            @RequestParam(required = false) String language) {
+        return ResponseEntity.ok(userService.listByRole(Role.VENDOR, search, location, status, language));
     }
 
     @GetMapping("/shopkeepers")
     public ResponseEntity<List<UserResponse>> shopkeepers(
             @RequestParam(required = false) String search,
             @RequestParam(required = false) String location,
-            @RequestParam(required = false) UserStatus status) {
-        return ResponseEntity.ok(userService.listByRole(Role.SHOPKEEPER, search, location, status));
+            @RequestParam(required = false) UserStatus status,
+            @RequestParam(required = false) String language) {
+        return ResponseEntity.ok(userService.listByRole(Role.SHOPKEEPER, search, location, status, language));
     }
 
     @GetMapping("/counts")

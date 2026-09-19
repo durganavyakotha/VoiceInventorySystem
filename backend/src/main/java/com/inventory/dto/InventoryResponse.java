@@ -22,6 +22,7 @@ public class InventoryResponse {
     private String imageUrl;
     private Integer quantity;
     private String unit;
+    private Double costPerUnit;
     private Integer threshold;
     private boolean lowStock;
     private String availability;
@@ -40,6 +41,7 @@ public class InventoryResponse {
                 .imageUrl(item.getProduct().getImageUrl())
                 .quantity(item.getQuantity())
                 .unit(item.getUnit() != null ? item.getUnit() : "pieces")
+                .costPerUnit(item.getCostPerUnit() != null ? item.getCostPerUnit() : 0.0)
                 .threshold(item.getThreshold())
                 .lowStock(low)
                 .availability(availability)

@@ -3,6 +3,7 @@ import { vendorService } from '../../services/vendorService';
 import { orderService } from '../../services/orderService';
 import { mediaUrl } from '../../services/api';
 import { useI18n } from '../../context/LanguageContext';
+import VoiceRecorder from '../../components/VoiceRecorder';
 
 export default function VendorsPage() {
   const { t } = useI18n();
@@ -13,6 +14,7 @@ export default function VendorsPage() {
   const [selected, setSelected] = useState(null);
   const [itemsLoading, setItemsLoading] = useState(false);
   const [bookingId, setBookingId] = useState(null);
+  const [voiceCmd, setVoiceCmd] = useState('');
 
   useEffect(() => {
     (async () => {
@@ -28,13 +30,18 @@ export default function VendorsPage() {
     })();
   }, []);
 
+  const refreshItems = async (vendorId) => {
+    const { data } = await vendorService.getItems(vendorId);
+    setSelected(data);
+  };
+
   const openItems = async (vendor) => {
     setError('');
     setMessage('');
+    setVoiceCmd('');
     setItemsLoading(true);
     try {
-      const { data } = await vendorService.getItems(vendor.vendorId);
-      setSelected(data);
+      await refreshItems(vendor.vendorId);
     } catch (err) {
       setError(err.response?.data?.message || 'Failed to load items');
     } finally {
@@ -60,10 +67,27 @@ export default function VendorsPage() {
         deliveryWithinDays: 2,
       });
       setMessage(t('bookRequestSent'));
+      await refreshItems(selected.vendorId);
     } catch (err) {
       setError(err.response?.data?.message || 'Book failed');
     } finally {
       setBookingId(null);
+    }
+  };
+
+  const runVoice = async (mode) => {
+    if (!selected || !voiceCmd.trim()) return;
+    setError('');
+    setMessage('');
+    try {
+      const { data } = mode === 'book'
+        ? await orderService.voiceBook(selected.vendorId, voiceCmd.trim())
+        : await orderService.voiceWithdraw(selected.vendorId, voiceCmd.trim());
+      setMessage(data.spokenResponse || (mode === 'book' ? t('bookRequestSent') : 'Order withdrawn'));
+      setVoiceCmd('');
+      await refreshItems(selected.vendorId);
+    } catch (err) {
+      setError(err.response?.data?.message || 'Voice command failed');
     }
   };
 
@@ -115,6 +139,28 @@ export default function VendorsPage() {
                 {t('close')}
               </button>
             </div>
+
+            <div className="panel stack" style={{ marginTop: '1rem' }}>
+              <p className="muted" style={{ margin: 0 }}>
+                Voice book: “book 10 kg rice” · Voice withdraw: “withdraw rice” or “withdraw order #12”
+              </p>
+              <div className="row" style={{ flexWrap: 'wrap' }}>
+                <input
+                  style={{ flex: 1, minWidth: 200 }}
+                  value={voiceCmd}
+                  onChange={(e) => setVoiceCmd(e.target.value)}
+                  placeholder="book 10 rice / withdraw rice"
+                />
+                <VoiceRecorder onTranscript={setVoiceCmd} />
+                <button type="button" className="btn btn-sm" onClick={() => runVoice('book')}>
+                  Voice {t('book')}
+                </button>
+                <button type="button" className="btn btn-sm btn-secondary" onClick={() => runVoice('withdraw')}>
+                  Voice Withdraw
+                </button>
+              </div>
+            </div>
+
             {itemsLoading ? (
               <p>{t('loading')}</p>
             ) : (
@@ -132,6 +178,9 @@ export default function VendorsPage() {
                       <span className="item-category">{item.category || 'General'}</span>
                       <h3>{item.productName}</h3>
                       <p className="item-qty">{item.quantity} {item.unit || 'pieces'}</p>
+                      <p className="muted" style={{ margin: 0 }}>
+                        ₹{Number(item.costPerUnit || 0).toFixed(2)} / {item.unit || 'unit'}
+                      </p>
                       <button
                         type="button"
                         className="btn btn-sm"

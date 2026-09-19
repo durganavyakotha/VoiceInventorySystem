@@ -117,7 +117,12 @@ public class UserService {
     }
 
     public List<UserResponse> listByRole(Role role, String search, String location, UserStatus status) {
-        return userRepository.searchUsers(role, blankToNull(location), status, blankToNull(search))
+        return listByRole(role, search, location, status, null);
+    }
+
+    public List<UserResponse> listByRole(Role role, String search, String location, UserStatus status, String language) {
+        String langCode = com.inventory.util.LanguageNames.toCode(language);
+        return userRepository.searchUsers(role, blankToNull(location), status, blankToNull(search), blankToNull(langCode))
                 .stream()
                 .map(UserResponse::from)
                 .collect(Collectors.toList());

@@ -134,6 +134,41 @@ public class ChatService {
         return toMessageMap(message);
     }
 
+    /** Send a message as a specific user (used by chatbot assistant). */
+    @Transactional
+    public Map<String, Object> sendAsUser(User sender, User receiver, ChatMessageRequest request) {
+        ChatConversation conversation;
+        if (request.getConversationId() != null) {
+            conversation = conversationRepository.findById(request.getConversationId())
+                    .orElseThrow(() -> new RuntimeException("Conversation not found"));
+        } else {
+            conversation = conversationRepository.findBetweenUsers(sender.getId(), receiver.getId())
+                    .orElseGet(() -> conversationRepository.save(ChatConversation.builder()
+                            .participant1(sender)
+                            .participant2(receiver)
+                            .build()));
+        }
+        String sourceLang = request.getSourceLanguage() != null ? request.getSourceLanguage() : "en";
+        String targetLang = receiver.getLanguage() != null ? receiver.getLanguage() : "en";
+        String text = request.getMessageText();
+        String translated = translationService.translate(text, sourceLang, targetLang);
+
+        ChatMessage message = messageRepository.save(ChatMessage.builder()
+                .conversation(conversation)
+                .sender(sender)
+                .receiver(receiver)
+                .messageType(MessageType.TEXT)
+                .messageText(text)
+                .sourceLanguage(sourceLang)
+                .targetLanguage(targetLang)
+                .translatedText(translated)
+                .build());
+
+        conversation.setUpdatedAt(java.time.LocalDateTime.now());
+        conversationRepository.save(conversation);
+        return toMessageMap(message);
+    }
+
     @Transactional(readOnly = true)
     public List<Map<String, Object>> listMessages(Long conversationId) {
         User current = userService.getCurrentUser();

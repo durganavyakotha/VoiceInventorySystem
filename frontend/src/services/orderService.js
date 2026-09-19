@@ -2,6 +2,10 @@ import api from './api';
 
 export const orderService = {
   create: (data) => api.post('/api/orders', data),
+  voiceBook: (vendorId, command) =>
+    api.post('/api/orders/voice-book', { vendorId, command }),
+  voiceWithdraw: (vendorId, command) =>
+    api.post('/api/orders/voice-withdraw', { vendorId, command }),
   offer: (data) => api.post('/api/orders/offer', data),
   list: () => api.get('/api/orders'),
   accept: (id) => api.post(`/api/orders/${id}/accept`),

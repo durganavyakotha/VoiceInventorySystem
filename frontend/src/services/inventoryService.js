@@ -7,7 +7,7 @@ export const inventoryService = {
   },
   lowStock: () => api.get('/api/inventory/low-stock'),
   add: (data) => api.post('/api/inventory', data),
-  addWithImage: ({ productName, quantity, unit, category, threshold, barcode, file }) => {
+  addWithImage: ({ productName, quantity, unit, category, threshold, barcode, costPerUnit, file }) => {
     const form = new FormData();
     form.append('productName', productName);
     form.append('quantity', quantity);
@@ -15,6 +15,7 @@ export const inventoryService = {
     if (category) form.append('category', category);
     if (threshold != null) form.append('threshold', threshold);
     if (barcode) form.append('barcode', barcode);
+    if (costPerUnit != null) form.append('costPerUnit', costPerUnit);
     form.append('file', file);
     return api.post('/api/inventory/with-image', form);
   },

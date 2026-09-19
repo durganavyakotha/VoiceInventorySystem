@@ -90,16 +90,6 @@ export default function InventoryList() {
     }
   };
 
-  const onDelete = async (item) => {
-    if (!window.confirm(`${t('delete')} ${item.productName}?`)) return;
-    try {
-      await inventoryService.delete(item.id);
-      load();
-    } catch (err) {
-      setError(err.response?.data?.message || 'Delete failed');
-    }
-  };
-
   const statusLabel = (a) => {
     if (a === 'LOW_STOCK') return t('lowStock');
     if (a === 'OUT_OF_STOCK') return t('outOfStock');
@@ -172,6 +162,9 @@ export default function InventoryList() {
                 <p className="item-qty">
                   {item.quantity} {item.unit || 'pieces'}
                 </p>
+                <p className="muted" style={{ margin: 0 }}>
+                  ₹{Number(item.costPerUnit || 0).toFixed(2)} / {item.unit || 'unit'}
+                </p>
                 <p className={`status-pill ${item.availability?.toLowerCase()}`}>
                   {statusLabel(item.availability)}
                 </p>
@@ -184,9 +177,6 @@ export default function InventoryList() {
                   </button>
                   <button type="button" className="btn btn-sm btn-ghost" onClick={() => onSetThreshold(item)}>
                     {t('setThreshold')}
-                  </button>
-                  <button type="button" className="btn btn-sm btn-ghost" onClick={() => onDelete(item)}>
-                    {t('delete')}
                   </button>
                 </div>
               </div>

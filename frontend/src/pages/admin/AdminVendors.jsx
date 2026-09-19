@@ -1,11 +1,21 @@
 import { useCallback, useEffect, useState } from 'react';
 import { adminService } from '../../services/adminService';
 
+const LANGUAGES = [
+  { value: '', label: 'All languages' },
+  { value: 'en', label: 'English' },
+  { value: 'te', label: 'Telugu' },
+  { value: 'hi', label: 'Hindi' },
+  { value: 'ta', label: 'Tamil' },
+  { value: 'kn', label: 'Kannada' },
+];
+
 export default function AdminVendors() {
   const [rows, setRows] = useState([]);
   const [search, setSearch] = useState('');
   const [location, setLocation] = useState('');
   const [status, setStatus] = useState('');
+  const [language, setLanguage] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
 
@@ -17,6 +27,7 @@ export default function AdminVendors() {
       if (search) params.search = search;
       if (location) params.location = location;
       if (status) params.status = status;
+      if (language) params.language = language;
       const { data } = await adminService.getVendors(params);
       setRows(data || []);
     } catch (err) {
@@ -24,7 +35,7 @@ export default function AdminVendors() {
     } finally {
       setLoading(false);
     }
-  }, [search, location, status]);
+  }, [search, location, status, language]);
 
   useEffect(() => {
     load();
@@ -53,6 +64,14 @@ export default function AdminVendors() {
           <label>
             Location
             <input value={location} onChange={(e) => setLocation(e.target.value)} />
+          </label>
+          <label>
+            Language
+            <select value={language} onChange={(e) => setLanguage(e.target.value)}>
+              {LANGUAGES.map((l) => (
+                <option key={l.value || 'all'} value={l.value}>{l.label}</option>
+              ))}
+            </select>
           </label>
           <label>
             Status
@@ -88,7 +107,7 @@ export default function AdminVendors() {
                   <td>{u.firstName} {u.lastName}</td>
                   <td>{u.email}</td>
                   <td>{u.location || '—'}</td>
-                  <td>{u.language || '—'}</td>
+                  <td>{u.languageDisplay || u.language || '—'}</td>
                   <td>
                     <span className={`badge ${u.status === 'BLOCKED' ? 'badge-blocked' : 'badge-ok'}`}>
                       {u.status}

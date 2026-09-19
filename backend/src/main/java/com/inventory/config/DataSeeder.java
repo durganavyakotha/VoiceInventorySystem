@@ -163,34 +163,39 @@ public class DataSeeder implements CommandLineRunner {
         Product biscuits = productRepository.save(Product.builder().name("Biscuits").category("Snacks")
                 .imageUrl("/uploads/products/placeholder.svg").build());
 
-        seedInventory(shopkeeper, rice, 20, 10, "kg");
-        seedInventory(shopkeeper, oil, 8, 5, "L");
-        seedInventory(shopkeeper, soap, 3, 5, "pieces");
-        seedInventory(shopkeeper, pepsi, 15, 10, "bottles");
+        seedInventory(shopkeeper, rice, 20, 10, "kg", 45.0);
+        seedInventory(shopkeeper, oil, 8, 5, "L", 120.0);
+        seedInventory(shopkeeper, soap, 3, 5, "pieces", 25.0);
+        seedInventory(shopkeeper, pepsi, 15, 10, "bottles", 40.0);
 
-        seedInventory(vendor, rice, 200, 20, "kg");
-        seedInventory(vendor, oil, 150, 20, "L");
-        seedInventory(vendor, soap, 100, 10, "pieces");
-        seedInventory(vendor, pepsi, 80, 10, "bottles");
-        seedInventory(vendor, biscuits, 120, 20, "packets");
+        seedInventory(vendor, rice, 200, 20, "kg", 42.0);
+        seedInventory(vendor, oil, 150, 20, "L", 110.0);
+        seedInventory(vendor, soap, 100, 10, "pieces", 22.0);
+        seedInventory(vendor, pepsi, 80, 10, "bottles", 35.0);
+        seedInventory(vendor, biscuits, 120, 20, "packets", 30.0);
 
-        seedInventory(vendor2, rice, 300, 30, "kg");
-        seedInventory(vendor2, oil, 90, 15, "L");
-        seedInventory(vendor2, biscuits, 200, 25, "packets");
+        seedInventory(vendor2, rice, 300, 30, "kg", 41.0);
+        seedInventory(vendor2, oil, 90, 15, "L", 108.0);
+        seedInventory(vendor2, biscuits, 200, 25, "packets", 28.0);
 
-        seedInventory(vendor3, rice, 150, 20, "kg");
-        seedInventory(vendor3, soap, 80, 10, "pieces");
-        seedInventory(vendor3, pepsi, 60, 10, "bottles");
+        seedInventory(vendor3, rice, 150, 20, "kg", 43.0);
+        seedInventory(vendor3, soap, 80, 10, "pieces", 20.0);
+        seedInventory(vendor3, pepsi, 60, 10, "bottles", 36.0);
 
         log.info("Seeded demo shopkeeper shop@demo.com / Shop@123 and vendors vendor@demo.com / Vendor@123");
     }
 
     private void seedInventory(User user, Product product, int qty, int threshold, String unit) {
+        seedInventory(user, product, qty, threshold, unit, 0.0);
+    }
+
+    private void seedInventory(User user, Product product, int qty, int threshold, String unit, double cost) {
         inventoryRepository.save(InventoryItem.builder()
                 .user(user)
                 .product(product)
                 .quantity(qty)
                 .unit(unit)
+                .costPerUnit(cost)
                 .threshold(threshold)
                 .build());
     }

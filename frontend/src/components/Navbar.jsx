@@ -27,6 +27,7 @@ const LINK_KEYS = {
     { to: '/vendor/alerts', labelKey: 'alerts' },
     { to: '/vendor/inventory', labelKey: 'inventory' },
     { to: '/vendor/add', labelKey: 'addItems' },
+    { to: '/vendor/chat', labelKey: 'chattingHistory' },
   ],
 };
 

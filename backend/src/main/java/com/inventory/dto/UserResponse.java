@@ -24,6 +24,7 @@ public class UserResponse {
     private String location;
     private String phone;
     private String language;
+    private String languageDisplay;
     private UserStatus status;
     private String profileImageUrl;
     private String shopName;
@@ -43,6 +44,7 @@ public class UserResponse {
                 .location(user.getLocation())
                 .phone(user.getPhone())
                 .language(user.getLanguage())
+                .languageDisplay(com.inventory.util.LanguageNames.toFull(user.getLanguage()))
                 .status(user.getStatus())
                 .profileImageUrl(user.getProfileImageUrl())
                 .createdAt(user.getCreatedAt())

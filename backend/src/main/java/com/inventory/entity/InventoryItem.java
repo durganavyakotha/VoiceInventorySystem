@@ -35,6 +35,10 @@ public class InventoryItem {
     @Builder.Default
     private String unit = "pieces";
 
+    /** Cost per unit in INR. */
+    @Builder.Default
+    private Double costPerUnit = 0.0;
+
     @Builder.Default
     private Integer threshold = 5;
 

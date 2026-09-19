@@ -31,6 +31,7 @@ export default function AddItems() {
     barcode: '',
     category: 'General',
     unit: 'kg',
+    costPerUnit: 0,
   });
   const [capturedFile, setCapturedFile] = useState(null);
   const [preview, setPreview] = useState(null);
@@ -107,10 +108,11 @@ export default function AddItems() {
         barcode: manual.barcode || undefined,
         category: manual.category,
         unit: manual.unit,
+        costPerUnit: Number(manual.costPerUnit) || 0,
         file: capturedFile,
       });
       setMessage(`${data.productName} — ${data.quantity} ${data.unit}`);
-      setManual({ productName: '', quantity: 1, threshold: 5, barcode: '', category: 'General', unit: 'kg' });
+      setManual({ productName: '', quantity: 1, threshold: 5, barcode: '', category: 'General', unit: 'kg', costPerUnit: 0 });
       setCapturedFile(null);
       setPreview(null);
     } catch (err) {
@@ -222,6 +224,16 @@ export default function AddItems() {
               <select value={manual.unit} onChange={(e) => setManual({ ...manual, unit: e.target.value })}>
                 {UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
               </select>
+            </label>
+            <label>
+              Cost / unit (₹)
+              <input
+                type="number"
+                min={0}
+                step="0.01"
+                value={manual.costPerUnit}
+                onChange={(e) => setManual({ ...manual, costPerUnit: e.target.value })}
+              />
             </label>
             <label>
               {t('category')}

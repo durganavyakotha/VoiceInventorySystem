@@ -19,6 +19,20 @@ public class OrderController {
 
     private final OrderService orderService;
 
+    @PostMapping("/voice-book")
+    public ResponseEntity<Map<String, Object>> voiceBook(@RequestBody Map<String, Object> body) {
+        Long vendorId = Long.valueOf(body.get("vendorId").toString());
+        String command = String.valueOf(body.get("command"));
+        return ResponseEntity.ok(orderService.voiceBook(vendorId, command));
+    }
+
+    @PostMapping("/voice-withdraw")
+    public ResponseEntity<Map<String, Object>> voiceWithdraw(@RequestBody Map<String, Object> body) {
+        Long vendorId = body.get("vendorId") != null ? Long.valueOf(body.get("vendorId").toString()) : null;
+        String command = String.valueOf(body.get("command"));
+        return ResponseEntity.ok(orderService.voiceWithdraw(vendorId, command));
+    }
+
     @PostMapping
     public ResponseEntity<Map<String, Object>> create(@Valid @RequestBody OrderRequest request) {
         return ResponseEntity.ok(orderService.createOrder(request));
