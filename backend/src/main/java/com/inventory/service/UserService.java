@@ -1,5 +1,6 @@
 package com.inventory.service;
 
+import com.inventory.config.AppLocations;
 import com.inventory.dto.ProfileUpdateRequest;
 import com.inventory.dto.UserResponse;
 import com.inventory.entity.Shop;
@@ -52,7 +53,10 @@ public class UserService {
     }
 
     public UserResponse getProfile() {
-        return UserResponse.from(getCurrentUser());
+        User user = getCurrentUser();
+        UserResponse response = UserResponse.from(user);
+        shopRepository.findByUser(user).ifPresent(shop -> response.setShopName(shop.getShopName()));
+        return response;
     }
 
     @Transactional
@@ -65,16 +69,17 @@ public class UserService {
             user.setLastName(request.getLastName().trim());
         }
         if (request.getLocation() != null) {
-            user.setLocation(request.getLocation());
+            AppLocations.LocationOption loc = AppLocations.findByName(request.getLocation())
+                    .orElseThrow(() -> new RuntimeException("Please select a location from the map list"));
+            user.setLocation(loc.name());
+            user.setLatitude(loc.latitude());
+            user.setLongitude(loc.longitude());
+        }
+        if (request.getPhone() != null) {
+            user.setPhone(request.getPhone().trim());
         }
         if (request.getLanguage() != null) {
             user.setLanguage(request.getLanguage());
-        }
-        if (request.getLatitude() != null) {
-            user.setLatitude(request.getLatitude());
-        }
-        if (request.getLongitude() != null) {
-            user.setLongitude(request.getLongitude());
         }
         user = userRepository.save(user);
 
@@ -97,7 +102,9 @@ public class UserService {
             shopRepository.save(shop);
         }
 
-        return UserResponse.from(user);
+        UserResponse response = UserResponse.from(user);
+        shopRepository.findByUser(user).ifPresent(shop -> response.setShopName(shop.getShopName()));
+        return response;
     }
 
     @Transactional

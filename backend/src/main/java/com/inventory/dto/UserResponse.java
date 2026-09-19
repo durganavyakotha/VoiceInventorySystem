@@ -22,11 +22,11 @@ public class UserResponse {
     private String email;
     private Role role;
     private String location;
+    private String phone;
     private String language;
     private UserStatus status;
-    private Double latitude;
-    private Double longitude;
     private String profileImageUrl;
+    private String shopName;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 
@@ -41,10 +41,9 @@ public class UserResponse {
                 .email(user.getEmail())
                 .role(user.getRole())
                 .location(user.getLocation())
+                .phone(user.getPhone())
                 .language(user.getLanguage())
                 .status(user.getStatus())
-                .latitude(user.getLatitude())
-                .longitude(user.getLongitude())
                 .profileImageUrl(user.getProfileImageUrl())
                 .createdAt(user.getCreatedAt())
                 .updatedAt(user.getUpdatedAt())

@@ -20,5 +20,9 @@ public class InventoryRequest {
     @Min(0)
     private Integer threshold;
 
+    /** Required: product picture URL or upload path after multipart save. */
     private String imageUrl;
+
+    /** Unit: kg, packets, bottles, pieces, bags, L, etc. */
+    private String unit;
 }

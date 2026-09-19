@@ -51,7 +51,7 @@ export default function App() {
           <Route index element={<Navigate to="inventory" replace />} />
           <Route path="inventory" element={<InventoryList />} />
           <Route path="add" element={<AddItems />} />
-          <Route path="vendors" element={<VendorsPage chatBase="/shopkeeper/chat" showOrder />} />
+          <Route path="vendors" element={<VendorsPage />} />
           <Route path="sold" element={<SoldItems />} />
           <Route path="alerts" element={<AlertsPage />} />
           <Route path="contact" element={<ContactUs />} />
@@ -66,7 +66,7 @@ export default function App() {
           <Route index element={<Navigate to="inventory" replace />} />
           <Route path="inventory" element={<InventoryList />} />
           <Route path="add" element={<AddItems />} />
-          <Route path="vendors" element={<VendorsPage chatBase="/vendor/chat" showOrder={false} />} />
+          <Route path="vendors" element={<VendorsPage />} />
           <Route path="orders" element={<OrdersPage />} />
           <Route path="contact" element={<ContactUs />} />
           <Route path="alerts" element={<AlertsPage />} />

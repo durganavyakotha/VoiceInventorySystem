@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import LocationSelect from '../components/LocationSelect';
+import { t as translate } from '../i18n/translations';
 
 const LANGUAGES = [
   { value: 'en', label: 'English' },
@@ -24,13 +26,15 @@ export default function Register() {
     lastName: '',
     email: '',
     password: '',
-    location: '',
+    location: 'Markapur',
+    phone: '',
     language: 'en',
     role: 'SHOPKEEPER',
     shopName: '',
   });
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const tr = (key) => translate(key, form.language);
 
   if (!loading && isAuthenticated) {
     return <Navigate to={homeForRole(user?.role)} replace />;
@@ -59,32 +63,31 @@ export default function Register() {
     <div className="hero-auth page">
       <div className="hero-card" style={{ width: 'min(560px, 100%)' }}>
         <p className="brand">VoiceStock</p>
-        <h1 className="headline">Open your digital shop shelf</h1>
-        <p className="muted">Register as a shopkeeper or vendor to start tracking stock.</p>
+        <h1 className="headline">{tr('createAccount')}</h1>
         {error && <div className="alert alert-error" style={{ marginTop: '1rem' }}>{error}</div>}
         <form className="form-grid two" style={{ marginTop: '1.25rem' }} onSubmit={onSubmit}>
           <label>
-            First name
+            {tr('firstName')}
             <input name="firstName" value={form.firstName} onChange={onChange} required />
           </label>
           <label>
-            Last name
+            {tr('lastName')}
             <input name="lastName" value={form.lastName} onChange={onChange} required />
           </label>
           <label style={{ gridColumn: '1 / -1' }}>
-            Email
+            {tr('email')}
             <input type="email" name="email" value={form.email} onChange={onChange} required />
           </label>
           <label style={{ gridColumn: '1 / -1' }}>
-            Password
+            {tr('password')}
             <input type="password" name="password" value={form.password} onChange={onChange} minLength={6} required />
           </label>
           <label>
-            Location
-            <input name="location" value={form.location} onChange={onChange} />
+            {tr('phone')}
+            <input name="phone" value={form.phone} onChange={onChange} required placeholder="9876543210" />
           </label>
           <label>
-            Language
+            {tr('language')}
             <select name="language" value={form.language} onChange={onChange}>
               {LANGUAGES.map((l) => (
                 <option key={l.value} value={l.value}>{l.label}</option>
@@ -92,27 +95,31 @@ export default function Register() {
             </select>
           </label>
           <label>
-            Role
+            {tr('role')}
             <select name="role" value={form.role} onChange={onChange}>
-              <option value="SHOPKEEPER">Shopkeeper</option>
-              <option value="VENDOR">Vendor</option>
+              <option value="SHOPKEEPER">{tr('shopkeeper')}</option>
+              <option value="VENDOR">{tr('vendor')}</option>
             </select>
           </label>
           <label>
-            Shop name
-            <input name="shopName" value={form.shopName} onChange={onChange} />
+            {tr('shopName')}
+            <input name="shopName" value={form.shopName} onChange={onChange} required />
           </label>
           <div style={{ gridColumn: '1 / -1' }}>
-            <p className="muted" style={{ fontSize: '0.9rem', marginTop: 0 }}>
-              Admin accounts require a special email ending in <code>@admin.gmail.com</code>.
-            </p>
+            <LocationSelect
+              value={form.location}
+              onChange={(loc) => setForm((prev) => ({ ...prev, location: loc }))}
+              required
+            />
+          </div>
+          <div style={{ gridColumn: '1 / -1' }}>
             <button className="btn" type="submit" disabled={submitting}>
-              {submitting ? 'Creating…' : 'Create account'}
+              {submitting ? '…' : tr('createAccount')}
             </button>
           </div>
         </form>
         <p style={{ marginTop: '1rem' }}>
-          Already registered? <Link to="/login">Sign in</Link>
+          <Link to="/login">{tr('signIn')}</Link>
         </p>
       </div>
     </div>

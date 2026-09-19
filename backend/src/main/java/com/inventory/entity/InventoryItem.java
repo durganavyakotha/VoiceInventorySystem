@@ -31,6 +31,10 @@ public class InventoryItem {
     @Builder.Default
     private Integer quantity = 0;
 
+    /** Unit of measure: kg, g, L, ml, packets, bottles, pieces, bags, etc. */
+    @Builder.Default
+    private String unit = "pieces";
+
     @Builder.Default
     private Integer threshold = 5;
 

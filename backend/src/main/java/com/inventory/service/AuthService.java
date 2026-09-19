@@ -1,5 +1,6 @@
 package com.inventory.service;
 
+import com.inventory.config.AppLocations;
 import com.inventory.dto.AuthResponse;
 import com.inventory.dto.LoginRequest;
 import com.inventory.dto.RegisterRequest;
@@ -39,17 +40,20 @@ public class AuthService {
             throw new RuntimeException("Email already registered");
         }
 
+        AppLocations.LocationOption loc = resolveLocation(request.getLocation());
+
         User user = User.builder()
                 .firstName(request.getFirstName().trim())
                 .lastName(request.getLastName().trim())
                 .email(email)
                 .passwordHash(passwordEncoder.encode(request.getPassword()))
                 .role(request.getRole())
-                .location(request.getLocation())
+                .location(loc != null ? loc.name() : request.getLocation())
+                .phone(request.getPhone())
                 .language(request.getLanguage() != null ? request.getLanguage() : "en")
                 .status(UserStatus.ACTIVE)
-                .latitude(request.getLatitude())
-                .longitude(request.getLongitude())
+                .latitude(loc != null ? loc.latitude() : null)
+                .longitude(loc != null ? loc.longitude() : null)
                 .build();
 
         user = userRepository.save(user);
@@ -58,9 +62,9 @@ public class AuthService {
             Shop shop = Shop.builder()
                     .user(user)
                     .shopName(request.getShopName().trim())
-                    .location(request.getLocation())
-                    .latitude(request.getLatitude())
-                    .longitude(request.getLongitude())
+                    .location(user.getLocation())
+                    .latitude(user.getLatitude())
+                    .longitude(user.getLongitude())
                     .build();
             shopRepository.save(shop);
         }
@@ -89,6 +93,15 @@ public class AuthService {
                 .token(token)
                 .user(UserResponse.from(user))
                 .build();
+    }
+
+    private AppLocations.LocationOption resolveLocation(String location) {
+        if (location == null || location.isBlank()) {
+            return null;
+        }
+        return AppLocations.findByName(location)
+                .orElseThrow(() -> new RuntimeException(
+                        "Please select a location from the list"));
     }
 
     private void validateAdminEmail(String email, Role role) {

@@ -25,9 +25,15 @@ public class InventoryController {
 
     @GetMapping
     public ResponseEntity<List<InventoryResponse>> list(
-            @RequestParam(required = false) String search) {
-        if (search != null && !search.isBlank()) {
-            return ResponseEntity.ok(inventoryService.searchByProductName(search));
+            @RequestParam(required = false) String search,
+            @RequestParam(required = false) String name,
+            @RequestParam(required = false) String category,
+            @RequestParam(required = false) String availability) {
+        String nameFilter = name != null ? name : search;
+        if ((nameFilter != null && !nameFilter.isBlank())
+                || (category != null && !category.isBlank())
+                || (availability != null && !availability.isBlank())) {
+            return ResponseEntity.ok(inventoryService.filterInventory(nameFilter, category, availability));
         }
         return ResponseEntity.ok(inventoryService.listInventory());
     }
@@ -39,6 +45,27 @@ public class InventoryController {
 
     @PostMapping
     public ResponseEntity<InventoryResponse> add(@Valid @RequestBody InventoryRequest request) {
+        return ResponseEntity.ok(inventoryService.addOrUpdate(request));
+    }
+
+    @PostMapping(value = "/with-image", consumes = "multipart/form-data")
+    public ResponseEntity<InventoryResponse> addWithImage(
+            @RequestParam String productName,
+            @RequestParam Integer quantity,
+            @RequestParam(required = false) String unit,
+            @RequestParam(required = false) String category,
+            @RequestParam(required = false) Integer threshold,
+            @RequestParam(required = false) String barcode,
+            @RequestParam("file") MultipartFile file) {
+        String imageUrl = inventoryService.storeProductImage(file);
+        InventoryRequest request = new InventoryRequest();
+        request.setProductName(productName);
+        request.setQuantity(quantity);
+        request.setUnit(unit);
+        request.setCategory(category);
+        request.setThreshold(threshold);
+        request.setBarcode(barcode);
+        request.setImageUrl(imageUrl);
         return ResponseEntity.ok(inventoryService.addOrUpdate(request));
     }
 
@@ -75,12 +102,29 @@ public class InventoryController {
         return ResponseEntity.ok(voiceService.process(request));
     }
 
-    @PostMapping("/barcode")
-    public ResponseEntity<InventoryResponse> barcode(
+    @PostMapping(value = "/barcode", consumes = "multipart/form-data")
+    public ResponseEntity<InventoryResponse> barcodeWithImage(
             @RequestParam String barcode,
             @RequestParam(required = false) String productName,
-            @RequestParam(required = false) Integer quantity) {
-        return ResponseEntity.ok(inventoryService.barcodeLookupOrCreate(barcode, productName, quantity));
+            @RequestParam(required = false) Integer quantity,
+            @RequestParam(required = false) String unit,
+            @RequestParam(required = false) String category,
+            @RequestParam("file") MultipartFile file) {
+        String imageUrl = inventoryService.storeProductImage(file);
+        return ResponseEntity.ok(inventoryService.barcodeLookupOrCreate(
+                barcode, productName, quantity, unit, category, imageUrl));
+    }
+
+    @PostMapping("/barcode-json")
+    public ResponseEntity<InventoryResponse> barcodeJson(@RequestBody Map<String, Object> body) {
+        String barcode = String.valueOf(body.get("barcode"));
+        String productName = body.get("productName") != null ? String.valueOf(body.get("productName")) : null;
+        Integer quantity = body.get("quantity") != null ? Integer.valueOf(body.get("quantity").toString()) : 1;
+        String unit = body.get("unit") != null ? String.valueOf(body.get("unit")) : "pieces";
+        String category = body.get("category") != null ? String.valueOf(body.get("category")) : "General";
+        String imageUrl = body.get("imageUrl") != null ? String.valueOf(body.get("imageUrl")) : null;
+        return ResponseEntity.ok(inventoryService.barcodeLookupOrCreate(
+                barcode, productName, quantity, unit, category, imageUrl));
     }
 
     @PostMapping("/{id}/image")

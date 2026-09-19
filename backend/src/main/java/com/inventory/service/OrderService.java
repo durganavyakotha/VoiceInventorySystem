@@ -34,8 +34,10 @@ public class OrderService {
     @Transactional
     public Map<String, Object> createOrder(OrderRequest request) {
         User shopkeeper = userService.getCurrentUser();
-        if (shopkeeper.getRole() != Role.SHOPKEEPER && shopkeeper.getRole() != Role.ADMIN) {
-            throw new RuntimeException("Only shopkeepers can create orders");
+        if (shopkeeper.getRole() != Role.SHOPKEEPER
+                && shopkeeper.getRole() != Role.VENDOR
+                && shopkeeper.getRole() != Role.ADMIN) {
+            throw new RuntimeException("Only shopkeepers or vendors can create orders");
         }
         User vendor = userService.getUserById(request.getVendorId());
         if (vendor.getRole() != Role.VENDOR) {
@@ -77,7 +79,15 @@ public class OrderService {
         User user = userService.getCurrentUser();
         List<OrderEntity> orders;
         if (user.getRole() == Role.VENDOR) {
-            orders = orderRepository.findByVendorIdOrderByRequestedAtDesc(user.getId());
+            // Incoming as supplier + outgoing as buyer (vendor-to-vendor book)
+            List<OrderEntity> incoming = orderRepository.findByVendorIdOrderByRequestedAtDesc(user.getId());
+            List<OrderEntity> outgoing = orderRepository.findByShopkeeperIdOrderByRequestedAtDesc(user.getId());
+            Map<Long, OrderEntity> merged = new HashMap<>();
+            for (OrderEntity o : incoming) merged.put(o.getId(), o);
+            for (OrderEntity o : outgoing) merged.put(o.getId(), o);
+            orders = merged.values().stream()
+                    .sorted((a, b) -> b.getRequestedAt().compareTo(a.getRequestedAt()))
+                    .collect(Collectors.toList());
         } else if (user.getRole() == Role.SHOPKEEPER) {
             orders = orderRepository.findByShopkeeperIdOrderByRequestedAtDesc(user.getId());
         } else {

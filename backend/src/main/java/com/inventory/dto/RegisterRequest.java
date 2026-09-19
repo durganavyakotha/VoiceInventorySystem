@@ -24,7 +24,10 @@ public class RegisterRequest {
     @Size(min = 6)
     private String password;
 
+    /** Must be one of the predefined map locations. */
     private String location;
+
+    private String phone;
 
     private String language;
 
@@ -32,8 +35,4 @@ public class RegisterRequest {
     private Role role;
 
     private String shopName;
-
-    private Double latitude;
-
-    private Double longitude;
 }

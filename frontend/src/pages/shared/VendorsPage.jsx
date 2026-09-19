@@ -1,149 +1,154 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
 import { vendorService } from '../../services/vendorService';
-import { chatService } from '../../services/chatService';
 import { orderService } from '../../services/orderService';
+import { mediaUrl } from '../../services/api';
+import { useI18n } from '../../context/LanguageContext';
 
-export default function VendorsPage({ chatBase = '/shopkeeper/chat', showOrder = true }) {
-  const navigate = useNavigate();
-  const [product, setProduct] = useState('');
-  const [radius, setRadius] = useState('10');
-  const [customRadius, setCustomRadius] = useState('15');
-  const [minQty, setMinQty] = useState(1);
-  const [results, setResults] = useState([]);
+export default function VendorsPage() {
+  const { t } = useI18n();
+  const [vendors, setVendors] = useState([]);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [selected, setSelected] = useState(null);
+  const [itemsLoading, setItemsLoading] = useState(false);
+  const [bookingId, setBookingId] = useState(null);
 
-  const search = async (e) => {
-    e?.preventDefault();
-    setLoading(true);
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      try {
+        const { data } = await vendorService.listAll();
+        setVendors(data || []);
+      } catch (err) {
+        setError(err.response?.data?.message || 'Failed to load vendors');
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  const openItems = async (vendor) => {
     setError('');
     setMessage('');
+    setItemsLoading(true);
     try {
-      const r = radius === 'custom' ? Number(customRadius) : Number(radius);
-      const { data } = await vendorService.nearby({
-        product: product.trim(),
-        radius: r,
-        minQty: Number(minQty) || 1,
-      });
-      setResults(data || []);
-      if (!data?.length) setMessage('No nearby vendors found');
+      const { data } = await vendorService.getItems(vendor.vendorId);
+      setSelected(data);
     } catch (err) {
-      setError(err.response?.data?.message || 'Search failed');
+      setError(err.response?.data?.message || 'Failed to load items');
     } finally {
-      setLoading(false);
+      setItemsLoading(false);
     }
   };
 
-  const startChat = async (vendorId) => {
-    try {
-      const { data } = await chatService.getOrCreate(vendorId);
-      navigate(`${chatBase}?c=${data.id}`);
-    } catch (err) {
-      setError(err.response?.data?.message || 'Could not start chat');
-    }
-  };
-
-  const placeOrder = async (row) => {
-    const qty = window.prompt('Quantity to order', String(Math.min(row.availableQty, 10)));
+  const bookItem = async (item) => {
+    if (!selected) return;
+    const qty = window.prompt(t('quantity'), String(Math.min(item.quantity, 10)));
     if (qty == null) return;
+    const n = Number(qty);
+    if (!n || n <= 0) {
+      setError('Invalid quantity');
+      return;
+    }
+    setBookingId(item.id);
     try {
       await orderService.create({
-        vendorId: row.vendorId,
-        productName: row.productName,
-        quantity: Number(qty),
-        deliveryWithinDays: 3,
+        vendorId: selected.vendorId,
+        productName: item.productName,
+        quantity: n,
+        deliveryWithinDays: 2,
       });
-      setMessage('Order placed');
+      setMessage(t('bookRequestSent'));
     } catch (err) {
-      setError(err.response?.data?.message || 'Order failed');
+      setError(err.response?.data?.message || 'Book failed');
+    } finally {
+      setBookingId(null);
     }
   };
 
   return (
     <div className="stack">
-      <h1>{showOrder ? 'Nearby vendors' : 'Other vendors'}</h1>
+      <h1>{t('vendors')}</h1>
       {error && <div className="alert alert-error">{error}</div>}
       {message && <div className="alert alert-success">{message}</div>}
-      <form className="panel stack" onSubmit={search}>
-        <label>
-          Product
-          <input value={product} onChange={(e) => setProduct(e.target.value)} required placeholder="e.g. Rice" />
-        </label>
-        <div>
-          <strong>Radius (km)</strong>
-          <div className="radio-row" style={{ marginTop: '0.5rem' }}>
-            {['2', '5', '10', '20', 'custom'].map((v) => (
-              <label key={v}>
-                <input
-                  type="radio"
-                  name="radius"
-                  value={v}
-                  checked={radius === v}
-                  onChange={(e) => setRadius(e.target.value)}
-                />
-                {v === 'custom' ? 'Custom' : `${v} km`}
-              </label>
-            ))}
-          </div>
-          {radius === 'custom' && (
-            <input
-              type="number"
-              min={1}
-              value={customRadius}
-              onChange={(e) => setCustomRadius(e.target.value)}
-              style={{ maxWidth: 160, marginTop: '0.5rem' }}
-            />
-          )}
-        </div>
-        <label style={{ maxWidth: 200 }}>
-          Min quantity
-          <input type="number" min={1} value={minQty} onChange={(e) => setMinQty(e.target.value)} />
-        </label>
-        <button className="btn" type="submit" disabled={loading}>
-          {loading ? 'Searching…' : 'Search'}
-        </button>
-      </form>
 
-      <div className="table-wrap panel">
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>Vendor</th>
-              <th>Product</th>
-              <th>Distance</th>
-              <th>Stock</th>
-              <th>Location</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {results.map((row) => (
-              <tr key={`${row.vendorId}-${row.productName}`}>
-                <td>{row.firstName} {row.lastName}</td>
-                <td>{row.productName}</td>
-                <td>{row.distanceKm} km</td>
-                <td>{row.availableQty}</td>
-                <td>{row.location || '—'}</td>
-                <td>
-                  <div className="row">
-                    <button type="button" className="btn btn-sm" onClick={() => startChat(row.vendorId)}>
-                      Start chat
-                    </button>
-                    {showOrder && (
-                      <button type="button" className="btn btn-sm btn-secondary" onClick={() => placeOrder(row)}>
-                        Order
+      {loading ? (
+        <p>{t('loading')}</p>
+      ) : (
+        <div className="vendor-grid">
+          {vendors.map((v) => (
+            <div key={v.vendorId} className="vendor-card">
+              <div className="vendor-card-top">
+                {v.profileImageUrl ? (
+                  <img src={mediaUrl(v.profileImageUrl)} alt="" className="vendor-avatar" />
+                ) : (
+                  <span className="vendor-avatar fallback">{(v.firstName || '?')[0]}</span>
+                )}
+                <div>
+                  <h3>{v.name || `${v.firstName} ${v.lastName}`}</h3>
+                  <p className="muted" style={{ margin: 0 }}>{v.shopName}</p>
+                </div>
+              </div>
+              <ul className="vendor-meta">
+                <li><strong>{t('phone')}:</strong> {v.phone || '—'}</li>
+                <li><strong>{t('location')}:</strong> {v.location || '—'}</li>
+                <li><strong>{t('email')}:</strong> {v.email}</li>
+              </ul>
+              <button type="button" className="btn btn-sm" onClick={() => openItems(v)}>
+                {t('availableItems')}
+              </button>
+            </div>
+          ))}
+          {!vendors.length && <div className="empty">{t('noVendors')}</div>}
+        </div>
+      )}
+
+      {selected && (
+        <div className="modal-backdrop" onClick={() => setSelected(null)} role="presentation">
+          <div className="modal-panel" onClick={(e) => e.stopPropagation()} role="dialog">
+            <div className="row space-between">
+              <h2 style={{ margin: 0 }}>
+                {selected.name || `${selected.firstName} ${selected.lastName}`} — {t('availableItems')}
+              </h2>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setSelected(null)}>
+                {t('close')}
+              </button>
+            </div>
+            {itemsLoading ? (
+              <p>{t('loading')}</p>
+            ) : (
+              <div className="item-grid" style={{ marginTop: '1rem' }}>
+                {(selected.items || []).map((item) => (
+                  <div key={item.id} className="item-card">
+                    <div className="item-card-media">
+                      {item.imageUrl ? (
+                        <img src={mediaUrl(item.imageUrl)} alt={item.productName} />
+                      ) : (
+                        <div className="item-card-placeholder">—</div>
+                      )}
+                    </div>
+                    <div className="item-card-body">
+                      <span className="item-category">{item.category || 'General'}</span>
+                      <h3>{item.productName}</h3>
+                      <p className="item-qty">{item.quantity} {item.unit || 'pieces'}</p>
+                      <button
+                        type="button"
+                        className="btn btn-sm"
+                        disabled={bookingId === item.id || item.quantity <= 0}
+                        onClick={() => bookItem(item)}
+                      >
+                        {t('book')}
                       </button>
-                    )}
+                    </div>
                   </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {!results.length && !loading && <div className="empty">Search to see vendors nearby.</div>}
-      </div>
+                ))}
+                {!(selected.items || []).length && <div className="empty">{t('noProducts')}</div>}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -37,6 +37,8 @@ public class User {
 
     private String location;
 
+    private String phone;
+
     @Builder.Default
     private String language = "en";
 
@@ -45,8 +47,10 @@ public class User {
     @Builder.Default
     private UserStatus status = UserStatus.ACTIVE;
 
+    /** Set automatically from selected location name (map preset). */
     private Double latitude;
 
+    /** Set automatically from selected location name (map preset). */
     private Double longitude;
 
     private String profileImageUrl;

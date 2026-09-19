@@ -21,11 +21,16 @@ public class InventoryResponse {
     private String category;
     private String imageUrl;
     private Integer quantity;
+    private String unit;
     private Integer threshold;
     private boolean lowStock;
+    private String availability;
     private LocalDateTime updatedAt;
 
     public static InventoryResponse from(InventoryItem item) {
+        boolean low = item.getQuantity() <= item.getThreshold();
+        String availability = item.getQuantity() <= 0 ? "OUT_OF_STOCK"
+                : (low ? "LOW_STOCK" : "AVAILABLE");
         return InventoryResponse.builder()
                 .id(item.getId())
                 .productId(item.getProduct().getId())
@@ -34,8 +39,10 @@ public class InventoryResponse {
                 .category(item.getProduct().getCategory())
                 .imageUrl(item.getProduct().getImageUrl())
                 .quantity(item.getQuantity())
+                .unit(item.getUnit() != null ? item.getUnit() : "pieces")
                 .threshold(item.getThreshold())
-                .lowStock(item.getQuantity() <= item.getThreshold())
+                .lowStock(low)
+                .availability(availability)
                 .updatedAt(item.getUpdatedAt())
                 .build();
     }

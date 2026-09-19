@@ -18,6 +18,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.stream.Collectors;
 
@@ -38,11 +39,28 @@ public class InventoryService {
                 .collect(Collectors.toList());
     }
 
-    public List<InventoryResponse> searchByProductName(String name) {
+    public List<InventoryResponse> filterInventory(String name, String category, String availability) {
         User user = userService.getCurrentUser();
-        return inventoryRepository.findByUserIdAndProductNameContaining(user.getId(), name).stream()
+        return inventoryRepository.findByUser(user).stream()
                 .map(InventoryResponse::from)
+                .filter(item -> name == null || name.isBlank()
+                        || item.getProductName().toLowerCase(Locale.ROOT).contains(name.toLowerCase(Locale.ROOT)))
+                .filter(item -> category == null || category.isBlank() || "ALL".equalsIgnoreCase(category)
+                        || (item.getCategory() != null
+                        && item.getCategory().equalsIgnoreCase(category)))
+                .filter(item -> matchesAvailability(item, availability))
                 .collect(Collectors.toList());
+    }
+
+    private boolean matchesAvailability(InventoryResponse item, String availability) {
+        if (availability == null || availability.isBlank() || "ALL".equalsIgnoreCase(availability)) {
+            return true;
+        }
+        return availability.equalsIgnoreCase(item.getAvailability());
+    }
+
+    public List<InventoryResponse> searchByProductName(String name) {
+        return filterInventory(name, null, null);
     }
 
     public List<InventoryResponse> listLowStock() {
@@ -52,9 +70,19 @@ public class InventoryService {
                 .collect(Collectors.toList());
     }
 
+    public List<InventoryResponse> listByUserId(Long userId) {
+        return inventoryRepository.findByUserId(userId).stream()
+                .map(InventoryResponse::from)
+                .collect(Collectors.toList());
+    }
+
     @Transactional
     public InventoryResponse addOrUpdate(InventoryRequest request) {
         User user = userService.getCurrentUser();
+        if (request.getImageUrl() == null || request.getImageUrl().isBlank()) {
+            throw new RuntimeException("Product picture is required");
+        }
+        String unit = normalizeUnit(request.getUnit());
         Product product = findOrCreateProduct(request.getProductName(), request.getBarcode(),
                 request.getCategory(), request.getImageUrl());
 
@@ -63,13 +91,25 @@ public class InventoryService {
                         .user(user)
                         .product(product)
                         .quantity(0)
+                        .unit(unit)
                         .threshold(request.getThreshold() != null ? request.getThreshold() : 5)
                         .build());
 
         int addQty = request.getQuantity() != null ? request.getQuantity() : 0;
         item.setQuantity(item.getQuantity() + addQty);
+        if (request.getUnit() != null && !request.getUnit().isBlank()) {
+            item.setUnit(unit);
+        }
         if (request.getThreshold() != null) {
             item.setThreshold(request.getThreshold());
+        }
+        if (request.getImageUrl() != null && !request.getImageUrl().isBlank()) {
+            product.setImageUrl(request.getImageUrl());
+            productRepository.save(product);
+        }
+        if (request.getCategory() != null && !request.getCategory().isBlank()) {
+            product.setCategory(request.getCategory());
+            productRepository.save(product);
         }
         item = inventoryRepository.save(item);
 
@@ -82,6 +122,17 @@ public class InventoryService {
     }
 
     @Transactional
+    public InventoryResponse addWithUnit(String productName, Integer quantity, String unit, String category, String imageUrl) {
+        InventoryRequest request = new InventoryRequest();
+        request.setProductName(productName);
+        request.setQuantity(quantity);
+        request.setUnit(unit);
+        request.setCategory(category != null ? category : "General");
+        request.setImageUrl(imageUrl != null ? imageUrl : "/uploads/products/placeholder.svg");
+        return addOrUpdate(request);
+    }
+
+    @Transactional
     public InventoryResponse updateQuantity(Long itemId, Integer quantity) {
         User user = userService.getCurrentUser();
         InventoryItem item = getOwnedItem(itemId, user);
@@ -91,9 +142,7 @@ public class InventoryService {
 
         int diff = quantity - oldQty;
         if (diff != 0) {
-            recordTransaction(user, item.getProduct(),
-                    diff > 0 ? TransactionType.ADJUSTMENT : TransactionType.ADJUSTMENT,
-                    Math.abs(diff));
+            recordTransaction(user, item.getProduct(), TransactionType.ADJUSTMENT, Math.abs(diff));
         }
         checkLowStock(user, item);
         return InventoryResponse.from(item);
@@ -147,16 +196,35 @@ public class InventoryService {
     }
 
     @Transactional
-    public InventoryResponse addStockByProductName(String productName, Integer quantity) {
-        InventoryRequest request = new InventoryRequest();
-        request.setProductName(productName);
-        request.setQuantity(quantity);
-        return addOrUpdate(request);
+    public InventoryResponse addStockByProductName(String productName, Integer quantity, String unit) {
+        User user = userService.getCurrentUser();
+        Product product = findOrCreateProduct(productName, null, "General",
+                "/uploads/products/placeholder.svg");
+        InventoryItem item = inventoryRepository.findByUserAndProduct(user, product)
+                .orElse(InventoryItem.builder()
+                        .user(user)
+                        .product(product)
+                        .quantity(0)
+                        .unit(normalizeUnit(unit))
+                        .threshold(5)
+                        .build());
+        item.setQuantity(item.getQuantity() + quantity);
+        if (unit != null && !unit.isBlank()) {
+            item.setUnit(normalizeUnit(unit));
+        }
+        item = inventoryRepository.save(item);
+        recordTransaction(user, product, TransactionType.ADD, quantity);
+        checkLowStock(user, item);
+        return InventoryResponse.from(item);
     }
 
     @Transactional
-    public InventoryResponse barcodeLookupOrCreate(String barcode, String productName, Integer quantity) {
+    public InventoryResponse barcodeLookupOrCreate(String barcode, String productName, Integer quantity,
+                                                    String unit, String category, String imageUrl) {
         User user = userService.getCurrentUser();
+        if (imageUrl == null || imageUrl.isBlank()) {
+            throw new RuntimeException("Product picture is required");
+        }
         Product product = productRepository.findByBarcode(barcode).orElse(null);
         if (product == null) {
             if (productName == null || productName.isBlank()) {
@@ -165,7 +233,12 @@ public class InventoryService {
             product = productRepository.save(Product.builder()
                     .name(productName.trim())
                     .barcode(barcode)
+                    .category(category != null ? category : "General")
+                    .imageUrl(imageUrl)
                     .build());
+        } else if (product.getImageUrl() == null || product.getImageUrl().isBlank()) {
+            product.setImageUrl(imageUrl);
+            productRepository.save(product);
         }
 
         InventoryItem item = inventoryRepository.findByUserAndProduct(user, product)
@@ -173,6 +246,7 @@ public class InventoryService {
                         .user(user)
                         .product(product)
                         .quantity(0)
+                        .unit(normalizeUnit(unit))
                         .threshold(5)
                         .build());
 
@@ -180,6 +254,9 @@ public class InventoryService {
         if (addQty > 0) {
             item.setQuantity(item.getQuantity() + addQty);
             recordTransaction(user, product, TransactionType.ADD, addQty);
+        }
+        if (unit != null && !unit.isBlank()) {
+            item.setUnit(normalizeUnit(unit));
         }
         item = inventoryRepository.save(item);
         checkLowStock(user, item);
@@ -198,6 +275,15 @@ public class InventoryService {
     }
 
     @Transactional
+    public String storeProductImage(MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            throw new RuntimeException("Product picture is required");
+        }
+        String path = userService.storeFile(file, "products");
+        return "/uploads/" + path;
+    }
+
+    @Transactional
     public void deleteItem(Long itemId) {
         User user = userService.getCurrentUser();
         InventoryItem item = getOwnedItem(itemId, user);
@@ -211,6 +297,7 @@ public class InventoryService {
                         .user(user)
                         .product(product)
                         .quantity(0)
+                        .unit("pieces")
                         .threshold(5)
                         .build());
 
@@ -231,6 +318,11 @@ public class InventoryService {
         if (barcode != null && !barcode.isBlank()) {
             Product byBarcode = productRepository.findByBarcode(barcode).orElse(null);
             if (byBarcode != null) {
+                if (imageUrl != null && !imageUrl.isBlank()
+                        && (byBarcode.getImageUrl() == null || byBarcode.getImageUrl().isBlank())) {
+                    byBarcode.setImageUrl(imageUrl);
+                    return productRepository.save(byBarcode);
+                }
                 return byBarcode;
             }
         }
@@ -238,9 +330,26 @@ public class InventoryService {
                 .orElseGet(() -> productRepository.save(Product.builder()
                         .name(name.trim())
                         .barcode(barcode)
-                        .category(category)
+                        .category(category != null ? category : "General")
                         .imageUrl(imageUrl)
                         .build()));
+    }
+
+    public static String normalizeUnit(String unit) {
+        if (unit == null || unit.isBlank()) {
+            return "pieces";
+        }
+        String u = unit.trim().toLowerCase(Locale.ROOT);
+        return switch (u) {
+            case "kgs", "kilogram", "kilograms" -> "kg";
+            case "grams", "gram" -> "g";
+            case "litre", "litres", "liter", "liters" -> "L";
+            case "packet", "pack", "packs" -> "packets";
+            case "bottle" -> "bottles";
+            case "piece", "pcs", "pc", "units", "unit", "items", "item" -> "pieces";
+            case "bag" -> "bags";
+            default -> u;
+        };
     }
 
     private InventoryItem getOwnedItem(Long itemId, User user) {
@@ -263,8 +372,10 @@ public class InventoryService {
 
     private void checkLowStock(User user, InventoryItem item) {
         if (item.getQuantity() <= item.getThreshold()) {
+            String unit = item.getUnit() != null ? item.getUnit() : "";
             alertService.createAlert(user, AlertType.LOW_STOCK,
-                    "Low stock: " + item.getProduct().getName() + " (" + item.getQuantity() + " left). Consider contacting nearby vendors.");
+                    "Low stock: " + item.getProduct().getName() + " (" + item.getQuantity() + " " + unit
+                            + " left). Consider contacting nearby vendors.");
         }
     }
 

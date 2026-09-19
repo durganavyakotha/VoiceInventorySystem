@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { profileService } from '../services/profileService';
 import { mediaUrl } from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import { useI18n } from '../context/LanguageContext';
+import LocationSelect from './LocationSelect';
 
 const LANGUAGES = [
   { value: 'en', label: 'English' },
@@ -13,14 +15,14 @@ const LANGUAGES = [
 
 export default function ProfileForm() {
   const { updateUser } = useAuth();
+  const { t } = useI18n();
   const [form, setForm] = useState({
     firstName: '',
     lastName: '',
     location: '',
+    phone: '',
     language: 'en',
     shopName: '',
-    latitude: '',
-    longitude: '',
   });
   const [profileImageUrl, setProfileImageUrl] = useState(null);
   const [email, setEmail] = useState('');
@@ -39,10 +41,9 @@ export default function ProfileForm() {
           firstName: data.firstName || '',
           lastName: data.lastName || '',
           location: data.location || '',
+          phone: data.phone || '',
           language: data.language || 'en',
           shopName: data.shopName || '',
-          latitude: data.latitude ?? '',
-          longitude: data.longitude ?? '',
         });
         setEmail(data.email || '');
         setProfileImageUrl(data.profileImageUrl);
@@ -69,12 +70,7 @@ export default function ProfileForm() {
     setMessage('');
     setError('');
     try {
-      const payload = {
-        ...form,
-        latitude: form.latitude === '' ? null : Number(form.latitude),
-        longitude: form.longitude === '' ? null : Number(form.longitude),
-      };
-      const { data } = await profileService.update(payload);
+      const { data } = await profileService.update(form);
       updateUser(data);
       setMessage('Profile updated');
     } catch (err) {
@@ -98,11 +94,11 @@ export default function ProfileForm() {
     }
   };
 
-  if (loading) return <p>Loading profile…</p>;
+  if (loading) return <p>{t('loading')}</p>;
 
   return (
     <div className="panel stack" style={{ maxWidth: 640 }}>
-      <h2>Profile</h2>
+      <h2>{t('profile')}</h2>
       {error && <div className="alert alert-error">{error}</div>}
       {message && <div className="alert alert-success">{message}</div>}
       <div className="row">
@@ -112,49 +108,46 @@ export default function ProfileForm() {
           <div className="thumb" style={{ width: 72, height: 72 }} />
         )}
         <label style={{ flex: 1 }}>
-          Profile photo
+          {t('uploadPhoto')}
           <input type="file" accept="image/*" onChange={onImage} />
         </label>
       </div>
-      <p className="muted">Email: {email}</p>
+      <p className="muted">{t('email')}: {email}</p>
       <form className="form-grid two" onSubmit={onSubmit}>
         <label>
-          First name
+          {t('firstName')}
           <input name="firstName" value={form.firstName} onChange={onChange} required />
         </label>
         <label>
-          Last name
+          {t('lastName')}
           <input name="lastName" value={form.lastName} onChange={onChange} required />
         </label>
         <label>
-          Location
-          <input name="location" value={form.location} onChange={onChange} />
+          {t('phone')}
+          <input name="phone" value={form.phone} onChange={onChange} placeholder="9876543210" />
         </label>
         <label>
-          Language
+          {t('language')}
           <select name="language" value={form.language} onChange={onChange}>
             {LANGUAGES.map((l) => (
-              <option key={l.value} value={l.value}>
-                {l.label}
-              </option>
+              <option key={l.value} value={l.value}>{l.label}</option>
             ))}
           </select>
         </label>
         <label>
-          Shop name
+          {t('shopName')}
           <input name="shopName" value={form.shopName} onChange={onChange} />
         </label>
-        <label>
-          Latitude
-          <input name="latitude" type="number" step="any" value={form.latitude} onChange={onChange} />
-        </label>
-        <label>
-          Longitude
-          <input name="longitude" type="number" step="any" value={form.longitude} onChange={onChange} />
-        </label>
+        <div style={{ gridColumn: '1 / -1' }}>
+          <LocationSelect
+            value={form.location}
+            onChange={(loc) => setForm((prev) => ({ ...prev, location: loc }))}
+            required
+          />
+        </div>
         <div style={{ gridColumn: '1 / -1' }}>
           <button className="btn" type="submit" disabled={saving}>
-            {saving ? 'Saving…' : 'Save profile'}
+            {saving ? t('loading') : t('save')}
           </button>
         </div>
       </form>

@@ -1,38 +1,44 @@
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useI18n } from '../context/LanguageContext';
+import { mediaUrl } from '../services/api';
 
-const LINKS = {
+const LINK_KEYS = {
   ADMIN: [
-    { to: '/admin', label: 'Dashboard', end: true },
-    { to: '/admin/vendors', label: 'Vendors' },
-    { to: '/admin/shopkeepers', label: 'Shopkeepers' },
-    { to: '/admin/queries', label: 'Queries' },
+    { to: '/admin', labelKey: 'dashboard', end: true },
+    { to: '/admin/vendors', labelKey: 'vendors' },
+    { to: '/admin/shopkeepers', labelKey: 'shopkeepers' },
+    { to: '/admin/queries', labelKey: 'queries' },
   ],
   SHOPKEEPER: [
-    { to: '/shopkeeper/inventory', label: 'List Items' },
-    { to: '/shopkeeper/vendors', label: 'Vendors' },
-    { to: '/shopkeeper/sold', label: 'Sold Items' },
-    { to: '/shopkeeper/alerts', label: 'Alerts' },
-    { to: '/shopkeeper/add', label: 'Add Items' },
-    { to: '/shopkeeper/contact', label: 'Contact Us' },
-    { to: '/shopkeeper/chat', label: 'Chatting History' },
-    { to: '/shopkeeper/orders', label: 'Orders' },
+    { to: '/shopkeeper/inventory', labelKey: 'listItems' },
+    { to: '/shopkeeper/vendors', labelKey: 'vendors' },
+    { to: '/shopkeeper/sold', labelKey: 'soldItems' },
+    { to: '/shopkeeper/alerts', labelKey: 'alerts' },
+    { to: '/shopkeeper/add', labelKey: 'addItems' },
+    { to: '/shopkeeper/contact', labelKey: 'contactUs' },
+    { to: '/shopkeeper/chat', labelKey: 'chattingHistory' },
+    { to: '/shopkeeper/orders', labelKey: 'orders' },
   ],
   VENDOR: [
-    { to: '/vendor/vendors', label: 'Other Vendors' },
-    { to: '/vendor/orders', label: 'Orders' },
-    { to: '/vendor/contact', label: 'Contact Us' },
-    { to: '/vendor/alerts', label: 'Alerts' },
-    { to: '/vendor/inventory', label: 'Inventory' },
+    { to: '/vendor/vendors', labelKey: 'otherVendors' },
+    { to: '/vendor/orders', labelKey: 'orders' },
+    { to: '/vendor/contact', labelKey: 'contactUs' },
+    { to: '/vendor/alerts', labelKey: 'alerts' },
+    { to: '/vendor/inventory', labelKey: 'inventory' },
+    { to: '/vendor/add', labelKey: 'addItems' },
   ],
 };
 
 export default function Navbar({ basePath }) {
   const { user, logout } = useAuth();
+  const { t } = useI18n();
   const navigate = useNavigate();
   const role = user?.role || 'SHOPKEEPER';
-  const links = LINKS[role] || [];
+  const links = LINK_KEYS[role] || [];
   const profileTo = `${basePath}/profile`;
+  const fullName = [user?.firstName, user?.lastName].filter(Boolean).join(' ') || t('profile');
+  const photo = mediaUrl(user?.profileImageUrl);
 
   const handleLogout = () => {
     logout();
@@ -43,7 +49,7 @@ export default function Navbar({ basePath }) {
     <header className="navbar">
       <div className="container-wide navbar-inner">
         <NavLink to={basePath} className="nav-brand">
-          VoiceStock
+          {t('brand')}
         </NavLink>
         <nav className="nav-links">
           {links.map((link) => (
@@ -53,19 +59,28 @@ export default function Navbar({ basePath }) {
               end={link.end}
               className={({ isActive }) => (isActive ? 'active' : undefined)}
             >
-              {link.label}
+              {t(link.labelKey)}
             </NavLink>
           ))}
         </nav>
         <div className="nav-profile">
           <NavLink
             to={profileTo}
-            className={({ isActive }) => (isActive ? 'active' : undefined)}
+            className={({ isActive }) =>
+              `nav-user ${isActive ? 'active' : ''}`
+            }
           >
-            Profile
+            {photo ? (
+              <img src={photo} alt="" className="nav-avatar" />
+            ) : (
+              <span className="nav-avatar nav-avatar-fallback">
+                {(user?.firstName || '?')[0]}
+              </span>
+            )}
+            <span className="nav-user-name">{fullName}</span>
           </NavLink>
           <button type="button" className="btn btn-ghost btn-sm" onClick={handleLogout}>
-            Logout
+            {t('logout')}
           </button>
         </div>
       </div>

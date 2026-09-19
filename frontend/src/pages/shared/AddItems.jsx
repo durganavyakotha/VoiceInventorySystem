@@ -1,22 +1,36 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import VoiceRecorder from '../../components/VoiceRecorder';
 import { inventoryService } from '../../services/inventoryService';
+import { useAuth } from '../../context/AuthContext';
+import { useI18n } from '../../context/LanguageContext';
+
+const UNITS = ['kg', 'g', 'L', 'ml', 'packets', 'bottles', 'pieces', 'bags'];
+const CATEGORIES = ['Grains', 'Grocery', 'Beverages', 'Snacks', 'Personal Care', 'Dairy', 'General'];
 
 export default function AddItems() {
+  const { t, lang } = useI18n();
+  const { user } = useAuth();
   const [tab, setTab] = useState('camera');
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [voiceText, setVoiceText] = useState('');
   const [voiceResult, setVoiceResult] = useState(null);
+  const [voiceFile, setVoiceFile] = useState(null);
+  const [voicePreview, setVoicePreview] = useState(null);
   const [barcode, setBarcode] = useState('');
   const [barcodeName, setBarcodeName] = useState('');
   const [barcodeQty, setBarcodeQty] = useState(1);
+  const [barcodeUnit, setBarcodeUnit] = useState('pieces');
+  const [barcodeCategory, setBarcodeCategory] = useState('General');
+  const [barcodeFile, setBarcodeFile] = useState(null);
+  const [barcodePreview, setBarcodePreview] = useState(null);
   const [manual, setManual] = useState({
     productName: '',
     quantity: 1,
     threshold: 5,
     barcode: '',
-    category: '',
+    category: 'General',
+    unit: 'kg',
   });
   const [capturedFile, setCapturedFile] = useState(null);
   const [preview, setPreview] = useState(null);
@@ -25,7 +39,7 @@ export default function AddItems() {
   const streamRef = useRef(null);
 
   const stopCamera = useCallback(() => {
-    streamRef.current?.getTracks().forEach((t) => t.stop());
+    streamRef.current?.getTracks().forEach((tr) => tr.stop());
     streamRef.current = null;
   }, []);
 
@@ -39,15 +53,13 @@ export default function AddItems() {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
         if (cancelled) {
-          stream.getTracks().forEach((t) => t.stop());
+          stream.getTracks().forEach((tr) => tr.stop());
           return;
         }
         streamRef.current = stream;
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-        }
+        if (videoRef.current) videoRef.current.srcObject = stream;
       } catch {
-        setError('Camera access denied or unavailable');
+        setError('Camera access denied or unavailable — you can still upload a photo');
       }
     })();
     return () => {
@@ -56,81 +68,49 @@ export default function AddItems() {
     };
   }, [tab, stopCamera]);
 
-  useEffect(() => {
-    if (tab !== 'barcode' || !('BarcodeDetector' in window)) return undefined;
-    let cancelled = false;
-    let detector;
-    let raf;
-    (async () => {
-      try {
-        detector = new window.BarcodeDetector({ formats: ['ean_13', 'ean_8', 'code_128', 'qr_code', 'upc_a'] });
-        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-        if (cancelled) {
-          stream.getTracks().forEach((t) => t.stop());
-          return;
-        }
-        const video = document.createElement('video');
-        video.srcObject = stream;
-        video.setAttribute('playsinline', 'true');
-        await video.play();
-        const scan = async () => {
-          if (cancelled) return;
-          try {
-            const codes = await detector.detect(video);
-            if (codes?.[0]?.rawValue) {
-              setBarcode(codes[0].rawValue);
-            }
-          } catch {
-            /* ignore frame errors */
-          }
-          raf = requestAnimationFrame(scan);
-        };
-        scan();
-        streamRef.current = stream;
-      } catch {
-        /* BarcodeDetector optional */
-      }
-    })();
-    return () => {
-      cancelled = true;
-      if (raf) cancelAnimationFrame(raf);
-    };
-  }, [tab]);
-
   const capture = () => {
     const video = videoRef.current;
     const canvas = canvasRef.current;
     if (!video || !canvas) return;
     canvas.width = video.videoWidth || 640;
     canvas.height = video.videoHeight || 480;
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(video, 0, 0);
+    canvas.getContext('2d').drawImage(video, 0, 0);
     canvas.toBlob((blob) => {
       if (!blob) return;
       const file = new File([blob], `capture-${Date.now()}.jpg`, { type: 'image/jpeg' });
       setCapturedFile(file);
       setPreview(URL.createObjectURL(blob));
-      setMessage('Photo captured — confirm product details below');
+      setMessage('Photo captured');
     }, 'image/jpeg', 0.9);
+  };
+
+  const onUploadCamera = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setCapturedFile(file);
+    setPreview(URL.createObjectURL(file));
   };
 
   const submitManual = async (e) => {
     e.preventDefault();
     setError('');
     setMessage('');
+    if (!capturedFile) {
+      setError(t('pictureRequired'));
+      return;
+    }
     try {
-      const { data } = await inventoryService.add({
+      const { data } = await inventoryService.addWithImage({
         productName: manual.productName,
         quantity: Number(manual.quantity),
         threshold: Number(manual.threshold),
         barcode: manual.barcode || undefined,
-        category: manual.category || undefined,
+        category: manual.category,
+        unit: manual.unit,
+        file: capturedFile,
       });
-      if (capturedFile && data?.id) {
-        await inventoryService.uploadImage(data.id, capturedFile);
-      }
-      setMessage(`Saved ${data.productName}`);
-      setManual({ productName: '', quantity: 1, threshold: 5, barcode: '', category: '' });
+      setMessage(`${data.productName} — ${data.quantity} ${data.unit}`);
+      setManual({ productName: '', quantity: 1, threshold: 5, barcode: '', category: 'General', unit: 'kg' });
       setCapturedFile(null);
       setPreview(null);
     } catch (err) {
@@ -142,13 +122,20 @@ export default function AddItems() {
     e.preventDefault();
     setError('');
     setMessage('');
+    if (!barcodeFile) {
+      setError(t('pictureRequired'));
+      return;
+    }
     try {
-      const { data } = await inventoryService.barcode(
+      const { data } = await inventoryService.barcodeWithImage({
         barcode,
-        barcodeName || undefined,
-        Number(barcodeQty) || 1
-      );
-      setMessage(`Barcode item: ${data.productName} (qty ${data.quantity})`);
+        productName: barcodeName || undefined,
+        quantity: Number(barcodeQty) || 1,
+        unit: barcodeUnit,
+        category: barcodeCategory,
+        file: barcodeFile,
+      });
+      setMessage(`${data.productName} — ${data.quantity} ${data.unit}`);
     } catch (err) {
       setError(err.response?.data?.message || 'Barcode lookup failed');
     }
@@ -159,10 +146,21 @@ export default function AddItems() {
     if (!voiceText.trim()) return;
     setError('');
     setMessage('');
+    if (!voiceFile) {
+      setError(t('pictureRequired'));
+      return;
+    }
     try {
-      const { data } = await inventoryService.voiceCommand(voiceText.trim());
+      const { data } = await inventoryService.voiceCommand(voiceText.trim(), user?.language || lang);
       setVoiceResult(data);
-      setMessage(data.spokenResponse || (data.success ? 'Command processed' : 'Command failed'));
+      if (data.success && data.data?.id) {
+        await inventoryService.uploadImage(data.data.id, voiceFile);
+      } else if (data.success && data.action === 'ADD_STOCK') {
+        // reload via re-add with image if only name returned
+        const item = data.data;
+        if (item?.id) await inventoryService.uploadImage(item.id, voiceFile);
+      }
+      setMessage(data.spokenResponse || (data.success ? 'OK' : 'Failed'));
     } catch (err) {
       setError(err.response?.data?.message || 'Voice command failed');
     }
@@ -170,18 +168,18 @@ export default function AddItems() {
 
   return (
     <div className="stack">
-      <h1>Add items</h1>
+      <h1>{t('addItems')}</h1>
       {error && <div className="alert alert-error">{error}</div>}
       {message && <div className="alert alert-success">{message}</div>}
       <div className="tabs">
-        {['camera', 'barcode', 'voice'].map((t) => (
+        {['camera', 'barcode', 'voice'].map((tabKey) => (
           <button
-            key={t}
+            key={tabKey}
             type="button"
-            className={`tab ${tab === t ? 'active' : ''}`}
-            onClick={() => setTab(t)}
+            className={`tab ${tab === tabKey ? 'active' : ''}`}
+            onClick={() => setTab(tabKey)}
           >
-            {t[0].toUpperCase() + t.slice(1)}
+            {t(tabKey)}
           </button>
         ))}
       </div>
@@ -193,15 +191,16 @@ export default function AddItems() {
             <canvas ref={canvasRef} hidden />
           </div>
           <div className="row">
-            <button type="button" className="btn" onClick={capture}>Capture photo</button>
+            <button type="button" className="btn" onClick={capture}>{t('capturePhoto')}</button>
+            <label className="btn btn-secondary" style={{ cursor: 'pointer' }}>
+              {t('uploadPhoto')}
+              <input type="file" accept="image/*" hidden onChange={onUploadCamera} />
+            </label>
           </div>
-          {preview && <img src={preview} alt="Capture preview" style={{ maxWidth: 280, borderRadius: 12 }} />}
+          {preview && <img src={preview} alt="Preview" style={{ maxWidth: 280, borderRadius: 12 }} />}
           <form className="panel form-grid two" onSubmit={submitManual}>
-            <p style={{ gridColumn: '1 / -1', margin: 0 }} className="muted">
-              Recognition stub: confirm the product details before saving.
-            </p>
             <label>
-              Product name
+              {t('productName')}
               <input
                 required
                 value={manual.productName}
@@ -209,7 +208,7 @@ export default function AddItems() {
               />
             </label>
             <label>
-              Quantity
+              {t('quantity')}
               <input
                 type="number"
                 min={0}
@@ -219,7 +218,19 @@ export default function AddItems() {
               />
             </label>
             <label>
-              Threshold
+              {t('unit')}
+              <select value={manual.unit} onChange={(e) => setManual({ ...manual, unit: e.target.value })}>
+                {UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
+              </select>
+            </label>
+            <label>
+              {t('category')}
+              <select value={manual.category} onChange={(e) => setManual({ ...manual, category: e.target.value })}>
+                {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </label>
+            <label>
+              {t('threshold')}
               <input
                 type="number"
                 min={0}
@@ -228,63 +239,89 @@ export default function AddItems() {
               />
             </label>
             <label>
-              Category
-              <input
-                value={manual.category}
-                onChange={(e) => setManual({ ...manual, category: e.target.value })}
-              />
+              {t('barcode')}
+              <input value={manual.barcode} onChange={(e) => setManual({ ...manual, barcode: e.target.value })} />
             </label>
-            <label style={{ gridColumn: '1 / -1' }}>
-              Barcode (optional)
-              <input
-                value={manual.barcode}
-                onChange={(e) => setManual({ ...manual, barcode: e.target.value })}
-              />
-            </label>
-            <button className="btn" type="submit">Save item</button>
+            <button className="btn" type="submit">{t('saveItem')}</button>
           </form>
         </div>
       )}
 
       {tab === 'barcode' && (
         <form className="panel form-grid" onSubmit={submitBarcode}>
-          <p className="muted" style={{ marginTop: 0 }}>
-            Enter a barcode or use BarcodeDetector if your browser supports it.
-          </p>
           <label>
-            Barcode
+            {t('barcode')}
             <input value={barcode} onChange={(e) => setBarcode(e.target.value)} required />
           </label>
           <label>
-            Product name (if new)
+            {t('productName')}
             <input value={barcodeName} onChange={(e) => setBarcodeName(e.target.value)} />
           </label>
           <label>
-            Quantity
+            {t('quantity')}
             <input type="number" min={1} value={barcodeQty} onChange={(e) => setBarcodeQty(e.target.value)} />
           </label>
-          <button className="btn" type="submit">Submit barcode</button>
+          <label>
+            {t('unit')}
+            <select value={barcodeUnit} onChange={(e) => setBarcodeUnit(e.target.value)}>
+              {UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
+            </select>
+          </label>
+          <label>
+            {t('category')}
+            <select value={barcodeCategory} onChange={(e) => setBarcodeCategory(e.target.value)}>
+              {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </label>
+          <label>
+            {t('uploadPhoto')} *
+            <input
+              type="file"
+              accept="image/*"
+              required
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                setBarcodeFile(file || null);
+                setBarcodePreview(file ? URL.createObjectURL(file) : null);
+              }}
+            />
+          </label>
+          {barcodePreview && <img src={barcodePreview} alt="" style={{ maxWidth: 200, borderRadius: 12 }} />}
+          <button className="btn" type="submit">{t('saveItem')}</button>
         </form>
       )}
 
       {tab === 'voice' && (
         <div className="panel stack">
           <p className="muted" style={{ marginTop: 0 }}>
-            Try: “Add 10 rice” or “How much oil do I have?”
+            Examples: “10 kg rice add cheyyi” · “Biscuit packets — 10 added” · “5 bottles Pepsi remove”
           </p>
+          <label>
+            {t('uploadPhoto')} *
+            <input
+              type="file"
+              accept="image/*"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                setVoiceFile(file || null);
+                setVoicePreview(file ? URL.createObjectURL(file) : null);
+              }}
+            />
+          </label>
+          {voicePreview && <img src={voicePreview} alt="" style={{ maxWidth: 200, borderRadius: 12 }} />}
           <textarea
             rows={4}
             value={voiceText}
             onChange={(e) => setVoiceText(e.target.value)}
-            placeholder="Voice command transcript"
+            placeholder="10 kg rice add cheyyi"
           />
           <div className="row">
             <VoiceRecorder onTranscript={setVoiceText} />
-            <button type="button" className="btn" onClick={submitVoice}>Send command</button>
+            <button type="button" className="btn" onClick={submitVoice}>{t('sendCommand')}</button>
           </div>
           {voiceResult && (
             <div className="alert alert-info">
-              <div><strong>Action:</strong> {voiceResult.action}</div>
+              <div><strong>{voiceResult.action}</strong></div>
               <div>{voiceResult.spokenResponse}</div>
             </div>
           )}

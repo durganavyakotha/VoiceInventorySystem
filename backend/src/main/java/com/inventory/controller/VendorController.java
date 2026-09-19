@@ -15,6 +15,17 @@ public class VendorController {
 
     private final VendorService vendorService;
 
+    /** All active vendors (grid view). */
+    @GetMapping
+    public ResponseEntity<List<Map<String, Object>>> listAll() {
+        return ResponseEntity.ok(vendorService.listAllVendors());
+    }
+
+    @GetMapping("/{id}/items")
+    public ResponseEntity<Map<String, Object>> vendorItems(@PathVariable Long id) {
+        return ResponseEntity.ok(vendorService.getVendorWithItems(id));
+    }
+
     @GetMapping("/nearby")
     public ResponseEntity<List<Map<String, Object>>> nearby(
             @RequestParam String product,

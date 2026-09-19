@@ -7,9 +7,9 @@ public class ProfileUpdateRequest {
 
     private String firstName;
     private String lastName;
+    /** Must be one of the predefined map locations. */
     private String location;
+    private String phone;
     private String language;
-    private Double latitude;
-    private Double longitude;
     private String shopName;
 }
