@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-export default function VoiceRecorder({ onTranscript, lang = 'en-IN' }) {
+/**
+ * Browser speech recognition.
+ * @param {function} onTranscript
+ * @param {string} lang BCP-47 locale e.g. en-IN, te-IN
+ * @param {boolean} finalOnly If true, only emit final results (avoids garbled interim text)
+ */
+export default function VoiceRecorder({ onTranscript, lang = 'en-IN', finalOnly = false }) {
   const [supported, setSupported] = useState(false);
   const [listening, setListening] = useState(false);
   const recognitionRef = useRef(null);
@@ -13,22 +19,31 @@ export default function VoiceRecorder({ onTranscript, lang = 'en-IN' }) {
     setSupported(true);
     const recognition = new SpeechRecognition();
     recognition.continuous = false;
-    recognition.interimResults = true;
+    recognition.interimResults = !finalOnly;
     recognition.lang = lang;
     recognition.onresult = (event) => {
       let transcript = '';
+      let isFinal = false;
       for (let i = event.resultIndex; i < event.results.length; i += 1) {
         transcript += event.results[i][0].transcript;
+        if (event.results[i].isFinal) isFinal = true;
       }
-      onTranscriptRef.current?.(transcript.trim());
+      const text = transcript.trim();
+      if (!text) return;
+      if (finalOnly && !isFinal) return;
+      onTranscriptRef.current?.(text);
     };
     recognition.onend = () => setListening(false);
     recognition.onerror = () => setListening(false);
     recognitionRef.current = recognition;
     return () => {
-      recognition.stop();
+      try {
+        recognition.stop();
+      } catch {
+        /* ignore */
+      }
     };
-  }, [lang]);
+  }, [lang, finalOnly]);
 
   const toggle = useCallback(() => {
     const recognition = recognitionRef.current;
@@ -37,13 +52,18 @@ export default function VoiceRecorder({ onTranscript, lang = 'en-IN' }) {
       recognition.stop();
       setListening(false);
     } else {
-      recognition.start();
-      setListening(true);
+      try {
+        recognition.lang = lang;
+        recognition.start();
+        setListening(true);
+      } catch {
+        setListening(false);
+      }
     }
-  }, [listening]);
+  }, [listening, lang]);
 
   if (!supported) {
-    return <p className="muted">Speech recognition is not available in this browser. Type instead.</p>;
+    return <p className="muted">Speech recognition unavailable — type the command instead.</p>;
   }
 
   return (

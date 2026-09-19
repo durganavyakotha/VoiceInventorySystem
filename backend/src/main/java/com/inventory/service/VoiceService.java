@@ -3,13 +3,19 @@ package com.inventory.service;
 import com.inventory.dto.InventoryResponse;
 import com.inventory.dto.VoiceCommandRequest;
 import com.inventory.dto.VoiceCommandResponse;
+import com.inventory.entity.Product;
 import com.inventory.entity.User;
+import com.inventory.repository.ProductRepository;
+import com.inventory.util.FuzzyMatcher;
+import com.inventory.util.ProductAliases;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -20,6 +26,7 @@ public class VoiceService {
     private final InventoryService inventoryService;
     private final VendorService vendorService;
     private final UserService userService;
+    private final ProductRepository productRepository;
 
     private static final Pattern ADD_PATTERN = Pattern.compile(
             "(?i).*(?:add|stock\\s*add|cheyyi|pettu|add\\s*cheyyi|stock\\s*cheyyi|जोड़ो|जोड़|சேர்).*");
@@ -33,6 +40,9 @@ public class VoiceService {
     private static final Pattern UNIT_PATTERN = Pattern.compile(
             "(?i)\\b(kgs?|kilograms?|grams?|g|litres?|liters?|l|ml|packets?|packs?|bottles?|pieces?|pcs?|units?|items?|bags?)\\b");
 
+    private static final Pattern PRICE_PATTERN = Pattern.compile(
+            "(?i)(?:(?:rs\\.?|rupees?|inr|₹|price|cost|rate)\\s*[:=]?\\s*(\\d+(?:\\.\\d+)?)|(\\d+(?:\\.\\d+)?)\\s*(?:rs\\.?|rupees?|inr|₹))");
+
     public VoiceCommandResponse process(VoiceCommandRequest request) {
         String command = request.getCommand() != null ? request.getCommand().trim() : "";
         if (command.isBlank()) {
@@ -41,6 +51,7 @@ public class VoiceService {
 
         String normalized = command.toLowerCase(Locale.ROOT);
         String language = request.getLanguage() != null ? request.getLanguage() : lang();
+        boolean previewOnly = Boolean.TRUE.equals(request.getPreviewOnly());
 
         if (LOW_STOCK_PATTERN.matcher(normalized).matches()
                 || normalized.contains("low stock")
@@ -62,41 +73,119 @@ public class VoiceService {
         if (ADD_PATTERN.matcher(normalized).matches()
                 || normalized.contains("add")
                 || normalized.contains("pettu")
-                || normalized.contains("cheyyi")) {
-            return handleAdd(command, language);
+                || normalized.contains("cheyyi")
+                || previewOnly) {
+            return handleAdd(command, language, previewOnly);
+        }
+
+        // Try parse as add preview even without explicit "add"
+        ParsedItem parsed = parseItem(command);
+        if (parsed != null) {
+            return handleAdd(command, language, true);
         }
 
         return fail("UNKNOWN", localize("unknown", language) + ": " + command);
     }
 
-    private VoiceCommandResponse handleAdd(String command, String language) {
-        ParsedQtyProduct parsed = parseQtyProduct(command);
+    private VoiceCommandResponse handleAdd(String command, String language, boolean previewOnly) {
+        ParsedItem parsed = parseItem(command);
         if (parsed == null) {
             return fail("ADD_STOCK", localize("need_qty_product", language));
         }
-        InventoryResponse item = inventoryService.addStockByProductName(parsed.product, parsed.qty, parsed.unit);
-        String spoken = formatAdded(parsed.product, parsed.qty, item.getUnit(), language);
+
+        ResolvedProduct resolved = resolveProductName(parsed.product);
+        Double price = parsed.costPerUnit != null ? parsed.costPerUnit : 0.0;
+
+        if (previewOnly) {
+            String spoken = resolved.canonical + " — " + parsed.qty + " " + parsed.unit
+                    + (price > 0 ? " @ ₹" + price : "");
+            return VoiceCommandResponse.builder()
+                    .action("PREVIEW_ADD")
+                    .success(true)
+                    .spokenResponse(spoken)
+                    .productName(resolved.canonical)
+                    .quantity(parsed.qty)
+                    .unit(parsed.unit)
+                    .costPerUnit(price)
+                    .confidence(resolved.confidence)
+                    .matchedFrom(resolved.matchedFrom)
+                    .build();
+        }
+
+        InventoryResponse item = inventoryService.addStockByProductName(
+                resolved.canonical, parsed.qty, parsed.unit, price);
+        String spoken = formatAdded(resolved.canonical, parsed.qty, item.getUnit(), language);
         return VoiceCommandResponse.builder()
                 .action("ADD_STOCK")
                 .success(true)
                 .spokenResponse(spoken)
+                .productName(resolved.canonical)
+                .quantity(parsed.qty)
+                .unit(item.getUnit())
+                .costPerUnit(item.getCostPerUnit())
+                .confidence(resolved.confidence)
+                .matchedFrom(resolved.matchedFrom)
                 .data(item)
                 .build();
     }
 
     private VoiceCommandResponse handleRemove(String command, String language) {
-        ParsedQtyProduct parsed = parseQtyProduct(command);
+        ParsedItem parsed = parseItem(command);
         if (parsed == null) {
             return fail("REMOVE_STOCK", localize("need_qty_product", language));
         }
-        InventoryResponse item = inventoryService.removeStockByProductName(parsed.product, parsed.qty);
-        String spoken = formatRemoved(parsed.product, parsed.qty, item.getUnit(), item.getQuantity(), language);
+        ResolvedProduct resolved = resolveProductName(parsed.product);
+        InventoryResponse item = inventoryService.removeStockByProductName(resolved.canonical, parsed.qty);
+        String spoken = formatRemoved(resolved.canonical, parsed.qty, item.getUnit(), item.getQuantity(), language);
         return VoiceCommandResponse.builder()
                 .action("REMOVE_STOCK")
                 .success(true)
                 .spokenResponse(spoken)
+                .productName(resolved.canonical)
+                .quantity(parsed.qty)
+                .unit(item.getUnit())
                 .data(item)
                 .build();
+    }
+
+    private ResolvedProduct resolveProductName(String raw) {
+        if (raw == null || raw.trim().length() < 2) {
+            return new ResolvedProduct(raw != null ? raw.trim() : "", 0.0, raw);
+        }
+        String aliased = ProductAliases.resolve(raw.trim());
+        Set<String> candidates = new HashSet<>(ProductAliases.knownNames());
+        productRepository.findAll().forEach(p -> {
+            if (p.getName() != null && p.getName().trim().length() >= 2) {
+                candidates.add(p.getName().trim());
+            }
+        });
+        try {
+            inventoryService.listInventory().forEach(i -> {
+                if (i.getProductName() != null && i.getProductName().length() >= 2) {
+                    candidates.add(i.getProductName());
+                }
+            });
+        } catch (Exception ignored) {
+            // ignore
+        }
+
+        // Prefer exact / alias hit
+        for (String c : candidates) {
+            if (c.equalsIgnoreCase(aliased) || c.equalsIgnoreCase(raw.trim())) {
+                return new ResolvedProduct(c, 1.0, raw);
+            }
+        }
+
+        FuzzyMatcher.Match match = FuzzyMatcher.bestMatchDetailed(aliased, candidates, 0.78);
+        if (match != null && match.value().length() >= 2) {
+            // Title-case nicely if catalog uses Title Case
+            return new ResolvedProduct(match.value(), match.score(), raw);
+        }
+
+        // Keep multi-word English name as typed (title case first letter)
+        String canonical = aliased.substring(0, 1).toUpperCase(Locale.ROOT)
+                + (aliased.length() > 1 ? aliased.substring(1) : "");
+        return new ResolvedProduct(canonical, 0.9, raw);
     }
 
     private VoiceCommandResponse handleLowStock(String language) {
@@ -125,16 +214,19 @@ public class VoiceService {
         if (product == null || product.isBlank()) {
             return fail("FIND_VENDORS", localize("need_vendor", language));
         }
-        List<Map<String, Object>> vendors = vendorService.searchNearby(product, radius, 1, null, null);
+        ResolvedProduct resolved = resolveProductName(product);
+        List<Map<String, Object>> vendors = vendorService.searchNearby(resolved.canonical, radius, 1, null, null);
         String spoken = vendors.isEmpty()
-                ? localize("no_vendors", language) + " " + product
-                : localize("found_vendors", language) + " " + vendors.size() + " — " + product;
+                ? localize("no_vendors", language) + " " + resolved.canonical
+                : localize("found_vendors", language) + " " + vendors.size() + " — " + resolved.canonical;
         return VoiceCommandResponse.builder()
                 .action("FIND_VENDORS")
                 .success(true)
                 .spokenResponse(spoken)
                 .vendors(vendors)
                 .data(vendors)
+                .productName(resolved.canonical)
+                .confidence(resolved.confidence)
                 .build();
     }
 
@@ -164,44 +256,125 @@ public class VoiceService {
         return 5.0;
     }
 
-    private ParsedQtyProduct parseQtyProduct(String command) {
-        // "10 kg rice add" / "Rice 10 kg add cheyyi" / "10 biscuit packets add"
+    private ParsedItem parseItem(String command) {
+        if (command == null || command.isBlank()) {
+            return null;
+        }
+
+        // Normalize smart dashes / quotes
+        String raw = command
+                .replace('\u2014', '-')
+                .replace('\u2013', '-')
+                .replaceAll("[\\u00A0\\s]+", " ")
+                .trim();
+
+        Double price = extractPrice(raw);
+        // Remove price phrases so they do not pollute name/qty
+        String work = raw.replaceAll(
+                "(?i)(?:(?:rs\\.?|rupees?|inr|₹|price|cost|rate)\\s*[:=]?\\s*\\d+(?:\\.\\d+)?)|(?:\\d+(?:\\.\\d+)?\\s*(?:rs\\.?|rupees?|inr|₹))",
+                " ");
+        work = work.replaceAll("\\s+", " ").trim();
+
+        // Tokenize
+        String[] tokens = work.split("\\s+");
+        if (tokens.length == 0) {
+            return null;
+        }
+
+        Integer qty = null;
+        String unit = null;
+        java.util.List<String> nameTokens = new java.util.ArrayList<>();
+
+        Set<String> units = Set.of(
+                "kg", "kgs", "kilogram", "kilograms",
+                "g", "gram", "grams",
+                "l", "lt", "ltr", "litre", "litres", "liter", "liters", "ml",
+                "packet", "packets", "pack", "packs",
+                "bottle", "bottles",
+                "piece", "pieces", "pcs", "pc", "unit", "units", "item", "items",
+                "bag", "bags"
+        );
+        Set<String> stop = Set.of(
+                "add", "remove", "stock", "cheyyi", "pettu", "theeyandi", "thiyyi",
+                "please", "the", "a", "an", "of", "to", "my", "inventory",
+                "జోడించు", "తీసివేయి", "जोड़ो", "हटाओ"
+        );
+
+        // Pattern A: <qty> <unit?> <name...> [add]
+        // Pattern B: <name...> <qty> <unit?>
+        boolean startsWithNumber = tokens[0].matches("\\d+");
+
+        if (startsWithNumber) {
+            qty = Integer.parseInt(tokens[0]);
+            int i = 1;
+            if (i < tokens.length && units.contains(tokens[i].toLowerCase(Locale.ROOT))) {
+                unit = tokens[i];
+                i++;
+            }
+            for (; i < tokens.length; i++) {
+                String t = tokens[i];
+                String lower = t.toLowerCase(Locale.ROOT);
+                if (stop.contains(lower) || units.contains(lower)) {
+                    continue;
+                }
+                if (t.matches("\\d+(?:\\.\\d+)?")) {
+                    continue;
+                }
+                nameTokens.add(t);
+            }
+        } else {
+            // name first, then qty
+            for (int i = 0; i < tokens.length; i++) {
+                String t = tokens[i];
+                String lower = t.toLowerCase(Locale.ROOT);
+                if (t.matches("\\d+") && qty == null) {
+                    qty = Integer.parseInt(t);
+                    if (i + 1 < tokens.length && units.contains(tokens[i + 1].toLowerCase(Locale.ROOT))) {
+                        unit = tokens[i + 1];
+                        i++;
+                    }
+                    continue;
+                }
+                if (units.contains(lower) || stop.contains(lower)) {
+                    if (units.contains(lower) && unit == null) {
+                        unit = t;
+                    }
+                    continue;
+                }
+                if (t.matches("\\d+(?:\\.\\d+)?")) {
+                    continue;
+                }
+                nameTokens.add(t);
+            }
+        }
+
+        if (qty == null || qty <= 0) {
+            return null;
+        }
+        String product = String.join(" ", nameTokens).trim();
+        product = product.replaceAll("(?i)[—\\-:]+", " ").replaceAll("\\s+", " ").trim();
+        // Drop trailing junk words
+        product = product.replaceAll("(?i)\\b(add|remove|stock|cheyyi)$", "").trim();
+
+        if (product.length() < 2) {
+            return null;
+        }
+        if (unit == null) {
+            unit = "pieces";
+        }
+        return new ParsedItem(qty, product, InventoryService.normalizeUnit(unit), price);
+    }
+
+    private Double extractPrice(String command) {
         Matcher m = Pattern.compile(
-                "(?i)(\\d+)\\s*(kgs?|kilograms?|grams?|g|litres?|liters?|l|ml|packets?|packs?|bottles?|pieces?|pcs?|units?|items?|bags?)?\\s+" +
-                        "([a-zA-Z\\u0C00-\\u0C7F][\\w\\s\\u0C00-\\u0C7F]*?)\\s*" +
-                        "(?:add|remove|cheyyi|pettu|theeyandi|thiyyi|stock|जोड़ो|हटाओ)?").matcher(command);
+                "(?i)(?:rs\\.?|rupees?|inr|₹|price|cost|rate)\\s*[:=]?\\s*(\\d+(?:\\.\\d+)?)")
+                .matcher(command);
         if (m.find()) {
-            int qty = Integer.parseInt(m.group(1));
-            String unit = m.group(2) != null ? m.group(2) : extractTrailingUnit(m.group(3));
-            String product = cleanProduct(stripUnit(m.group(3)));
-            if (unit == null) {
-                unit = "pieces";
-            }
-            return new ParsedQtyProduct(qty, product, InventoryService.normalizeUnit(unit));
+            return Double.parseDouble(m.group(1));
         }
-
-        // "Rice — 10 kg" / "Biscuit packets — 10"
-        m = Pattern.compile("(?i)([a-zA-Z\\u0C00-\\u0C7F][\\w\\s\\u0C00-\\u0C7F]+?)\\s*[—\\-:]\\s*(\\d+)\\s*" +
-                "(kgs?|kilograms?|packets?|packs?|bottles?|pieces?|bags?|l|ml|g)?").matcher(command);
+        m = Pattern.compile("(?i)(\\d+(?:\\.\\d+)?)\\s*(?:rs\\.?|rupees?|inr|₹)").matcher(command);
         if (m.find()) {
-            String productPart = m.group(1);
-            int qty = Integer.parseInt(m.group(2));
-            String unit = m.group(3);
-            if (unit == null) {
-                unit = extractTrailingUnit(productPart);
-            }
-            if (unit == null) {
-                unit = "pieces";
-            }
-            return new ParsedQtyProduct(qty, cleanProduct(stripUnit(productPart)), InventoryService.normalizeUnit(unit));
-        }
-
-        m = Pattern.compile("(?i)(\\d+)\\s+(.+?)\\s+(?:add|remove|cheyyi|pettu|theeyandi|thiyyi|stock).*").matcher(command);
-        if (m.find()) {
-            String rest = m.group(2);
-            String unit = extractTrailingUnit(rest);
-            return new ParsedQtyProduct(Integer.parseInt(m.group(1)), cleanProduct(stripUnit(rest)),
-                    InventoryService.normalizeUnit(unit != null ? unit : "pieces"));
+            return Double.parseDouble(m.group(1));
         }
         return null;
     }
@@ -210,9 +383,7 @@ public class VoiceService {
         if (text == null) return null;
         Matcher m = UNIT_PATTERN.matcher(text);
         String last = null;
-        while (m.find()) {
-            last = m.group(1);
-        }
+        while (m.find()) last = m.group(1);
         return last;
     }
 
@@ -221,7 +392,7 @@ public class VoiceService {
     }
 
     private String cleanProduct(String raw) {
-        return raw.replaceAll("(?i)\\b(ni|lo|cheyyi|add|remove|stock)\\b", "")
+        return raw.replaceAll("(?i)\\b(ni|lo|cheyyi|add|remove|stock|price|cost|rs|rupees)\\b", "")
                 .replaceAll("\\s+", " ")
                 .trim();
     }
@@ -263,43 +434,20 @@ public class VoiceService {
             case "empty" -> switch (lang) {
                 case "te" -> "దయచేసి ఒక ఆదేశం చెప్పండి.";
                 case "hi" -> "कृपया एक आदेश बोलें।";
-                case "ta" -> "தயவுசெய்து ஒரு கட்டளையைச் சொல்லுங்கள்.";
-                case "kn" -> "ದಯವಿಟ್ಟು ಒಂದು ಆದೇಶ ಹೇಳಿ.";
                 default -> "Please say a command.";
             };
             case "unknown" -> switch (lang) {
                 case "te" -> "అర్థం కాలేదు";
                 case "hi" -> "समझ नहीं आया";
-                case "ta" -> "புரியவில்லை";
-                case "kn" -> "ಅರ್ಥವಾಗಲಿಲ್ಲ";
                 default -> "Sorry, I could not understand";
             };
-            case "need_qty_product" -> switch (lang) {
-                case "te" -> "ఉదా: 10 kg rice add cheyyi లేదా biscuit packets — 10 add";
-                case "hi" -> "उदा: 10 kg rice add या biscuit packets — 10 add";
-                default -> "Say quantity, unit and product, e.g. 10 kg rice add or biscuit packets — 10 added";
-            };
-            case "no_low" -> switch (lang) {
-                case "te" -> "అన్ని వస్తువులు తగినంత స్టాక్‌లో ఉన్నాయి.";
-                case "hi" -> "सभी वस्तुएँ पर्याप्त स्टॉक में हैं।";
-                default -> "All items are above threshold. No low stock items.";
-            };
-            case "low_list" -> switch (lang) {
-                case "te" -> "తక్కువ స్టాక్ వస్తువులు";
-                case "hi" -> "कम स्टॉक वस्तुएँ";
-                default -> "Low stock items";
-            };
-            case "need_vendor" -> "Say product and radius, e.g. Rice vendors ni 5 kilometers lo chupinchu";
-            case "no_vendors" -> switch (lang) {
-                case "te" -> "విక్రేతలు కనబడలేదు";
-                case "hi" -> "कोई विक्रेता नहीं मिला";
-                default -> "No vendors found for";
-            };
-            case "found_vendors" -> switch (lang) {
-                case "te" -> "విక్రేతలు దొరికారు:";
-                case "hi" -> "विक्रेता मिले:";
-                default -> "Found vendors:";
-            };
+            case "need_qty_product" ->
+                    "Say quantity, unit, product and optional price, e.g. 10 kg rice add price 45";
+            case "no_low" -> "All items are above threshold.";
+            case "low_list" -> "Low stock items";
+            case "need_vendor" -> "Say product and radius";
+            case "no_vendors" -> "No vendors found for";
+            case "found_vendors" -> "Found vendors:";
             default -> key;
         };
     }
@@ -307,10 +455,10 @@ public class VoiceService {
     private String normalizeLang(String language) {
         if (language == null) return "en";
         String l = language.toLowerCase(Locale.ROOT);
-        if (l.startsWith("te") || l.contains("telugu")) return "te";
-        if (l.startsWith("hi") || l.contains("hindi")) return "hi";
-        if (l.startsWith("ta") || l.contains("tamil")) return "ta";
-        if (l.startsWith("kn") || l.contains("kannada")) return "kn";
+        if (l.startsWith("te")) return "te";
+        if (l.startsWith("hi")) return "hi";
+        if (l.startsWith("ta")) return "ta";
+        if (l.startsWith("kn")) return "kn";
         return "en";
     }
 
@@ -322,5 +470,6 @@ public class VoiceService {
                 .build();
     }
 
-    private record ParsedQtyProduct(int qty, String product, String unit) {}
+    private record ParsedItem(int qty, String product, String unit, Double costPerUnit) {}
+    private record ResolvedProduct(String canonical, double confidence, String matchedFrom) {}
 }

@@ -10,4 +10,7 @@ public class VoiceCommandRequest {
     private String command;
 
     private String language;
+
+    /** If true, parse only and return preview card fields without saving stock. */
+    private Boolean previewOnly;
 }

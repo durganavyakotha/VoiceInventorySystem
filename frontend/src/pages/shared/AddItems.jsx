@@ -14,7 +14,7 @@ export default function AddItems() {
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [voiceText, setVoiceText] = useState('');
-  const [voiceResult, setVoiceResult] = useState(null);
+  const [voiceCards, setVoiceCards] = useState([]);
   const [voiceFile, setVoiceFile] = useState(null);
   const [voicePreview, setVoicePreview] = useState(null);
   const [barcode, setBarcode] = useState('');
@@ -148,24 +148,71 @@ export default function AddItems() {
     if (!voiceText.trim()) return;
     setError('');
     setMessage('');
+    try {
+      const { data } = await inventoryService.voiceCommand(
+        voiceText.trim(),
+        user?.language || lang,
+        true
+      );
+      if (!data.success) {
+        setError(data.spokenResponse || 'Could not understand');
+        return;
+      }
+      if (data.action === 'PREVIEW_ADD' || data.productName) {
+        const card = {
+          id: `v-${Date.now()}`,
+          productName: data.productName || '',
+          quantity: data.quantity ?? 1,
+          unit: data.unit || 'pieces',
+          costPerUnit: data.costPerUnit ?? 0,
+          confidence: data.confidence,
+          matchedFrom: data.matchedFrom,
+          spokenResponse: data.spokenResponse,
+          editing: true,
+        };
+        setVoiceCards((prev) => [card, ...prev.filter((c) => c.productName !== card.productName)]);
+        setMessage(data.spokenResponse || 'Item recognized — edit if needed, then confirm');
+      } else {
+        setMessage(data.spokenResponse || 'OK');
+      }
+    } catch (err) {
+      setError(err.response?.data?.message || 'Voice command failed');
+    }
+  };
+
+  const updateVoiceCard = (id, patch) => {
+    setVoiceCards((prev) => prev.map((c) => (c.id === id ? { ...c, ...patch } : c)));
+  };
+
+  const confirmVoiceCard = async (card) => {
     if (!voiceFile) {
       setError(t('pictureRequired'));
       return;
     }
-    try {
-      const { data } = await inventoryService.voiceCommand(voiceText.trim(), user?.language || lang);
-      setVoiceResult(data);
-      if (data.success && data.data?.id) {
-        await inventoryService.uploadImage(data.data.id, voiceFile);
-      } else if (data.success && data.action === 'ADD_STOCK') {
-        // reload via re-add with image if only name returned
-        const item = data.data;
-        if (item?.id) await inventoryService.uploadImage(item.id, voiceFile);
-      }
-      setMessage(data.spokenResponse || (data.success ? 'OK' : 'Failed'));
-    } catch (err) {
-      setError(err.response?.data?.message || 'Voice command failed');
+    if (!card.productName?.trim()) {
+      setError('Product name is required');
+      return;
     }
+    setError('');
+    try {
+      const { data } = await inventoryService.addWithImage({
+        productName: card.productName.trim(),
+        quantity: Number(card.quantity) || 1,
+        unit: card.unit || 'pieces',
+        category: 'General',
+        costPerUnit: Number(card.costPerUnit) || 0,
+        file: voiceFile,
+      });
+      setMessage(`Saved ${data.productName} — ${data.quantity} ${data.unit} @ ₹${data.costPerUnit || 0}`);
+      setVoiceCards((prev) => prev.filter((c) => c.id !== card.id));
+      setVoiceText('');
+    } catch (err) {
+      setError(err.response?.data?.message || 'Save failed');
+    }
+  };
+
+  const discardVoiceCard = (id) => {
+    setVoiceCards((prev) => prev.filter((c) => c.id !== id));
   };
 
   return (
@@ -306,10 +353,11 @@ export default function AddItems() {
       {tab === 'voice' && (
         <div className="panel stack">
           <p className="muted" style={{ marginTop: 0 }}>
-            Examples: “10 kg rice add cheyyi” · “Biscuit packets — 10 added” · “5 bottles Pepsi remove”
+            Type or speak in English for best accuracy: <code>10 kg rice add price 45</code>
+            {' '}— name, quantity, unit and price are separated automatically. You can edit before confirm.
           </p>
           <label>
-            {t('uploadPhoto')} *
+            {t('uploadPhoto')} * (required before confirm)
             <input
               type="file"
               accept="image/*"
@@ -322,21 +370,82 @@ export default function AddItems() {
           </label>
           {voicePreview && <img src={voicePreview} alt="" style={{ maxWidth: 200, borderRadius: 12 }} />}
           <textarea
-            rows={4}
+            rows={3}
             value={voiceText}
             onChange={(e) => setVoiceText(e.target.value)}
-            placeholder="10 kg rice add cheyyi"
+            placeholder="10 kg rice add price 45"
           />
           <div className="row">
-            <VoiceRecorder onTranscript={setVoiceText} />
+            <VoiceRecorder
+              onTranscript={setVoiceText}
+              lang="en-IN"
+              finalOnly
+            />
             <button type="button" className="btn" onClick={submitVoice}>{t('sendCommand')}</button>
           </div>
-          {voiceResult && (
-            <div className="alert alert-info">
-              <div><strong>{voiceResult.action}</strong></div>
-              <div>{voiceResult.spokenResponse}</div>
-            </div>
-          )}
+
+          <div className="item-grid">
+            {voiceCards.map((card) => (
+              <div key={card.id} className="item-card voice-preview-card">
+                <div className="item-card-body">
+                  <span className="item-category">Edit &amp; confirm</span>
+                  <label>
+                    Name
+                    <input
+                      value={card.productName}
+                      onChange={(e) => updateVoiceCard(card.id, { productName: e.target.value })}
+                    />
+                  </label>
+                  <div className="form-grid two" style={{ gap: '0.5rem' }}>
+                    <label>
+                      Qty
+                      <input
+                        type="number"
+                        min={1}
+                        value={card.quantity}
+                        onChange={(e) => updateVoiceCard(card.id, { quantity: e.target.value })}
+                      />
+                    </label>
+                    <label>
+                      Unit
+                      <select
+                        value={card.unit}
+                        onChange={(e) => updateVoiceCard(card.id, { unit: e.target.value })}
+                      >
+                        {UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
+                      </select>
+                    </label>
+                    <label style={{ gridColumn: '1 / -1' }}>
+                      Price (₹ / unit)
+                      <input
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        value={card.costPerUnit}
+                        onChange={(e) => updateVoiceCard(card.id, { costPerUnit: e.target.value })}
+                      />
+                    </label>
+                  </div>
+                  {card.confidence != null && (
+                    <p className="muted" style={{ margin: 0, fontSize: '0.8rem' }}>
+                      Match {(card.confidence * 100).toFixed(0)}%
+                      {card.matchedFrom && card.matchedFrom !== card.productName
+                        ? ` (heard “${card.matchedFrom}”)`
+                        : ''}
+                    </p>
+                  )}
+                  <div className="row" style={{ gap: '0.35rem', marginTop: '0.5rem' }}>
+                    <button type="button" className="btn btn-sm" onClick={() => confirmVoiceCard(card)}>
+                      Confirm save
+                    </button>
+                    <button type="button" className="btn btn-sm btn-danger" onClick={() => discardVoiceCard(card.id)}>
+                      Remove
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>

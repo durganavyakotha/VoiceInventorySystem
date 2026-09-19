@@ -26,8 +26,8 @@ export const inventoryService = {
   removeStock: (id, quantity) =>
     api.post(`/api/inventory/${id}/remove`, null, { params: { quantity } }),
   delete: (id) => api.delete(`/api/inventory/${id}`),
-  voiceCommand: (command, language) =>
-    api.post('/api/inventory/voice-command', { command, language }),
+  voiceCommand: (command, language, previewOnly = false) =>
+    api.post('/api/inventory/voice-command', { command, language, previewOnly }),
   barcodeWithImage: ({ barcode, productName, quantity, unit, category, file }) => {
     const form = new FormData();
     form.append('barcode', barcode);

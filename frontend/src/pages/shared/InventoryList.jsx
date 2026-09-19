@@ -90,6 +90,17 @@ export default function InventoryList() {
     }
   };
 
+  const onDelete = async (item) => {
+    if (!window.confirm(`Permanently remove ${item.productName}?`)) return;
+    try {
+      await inventoryService.delete(item.id);
+      setMessage('Item removed');
+      load();
+    } catch (err) {
+      setError(err.response?.data?.message || 'Delete failed');
+    }
+  };
+
   const statusLabel = (a) => {
     if (a === 'LOW_STOCK') return t('lowStock');
     if (a === 'OUT_OF_STOCK') return t('outOfStock');
@@ -177,6 +188,9 @@ export default function InventoryList() {
                   </button>
                   <button type="button" className="btn btn-sm btn-ghost" onClick={() => onSetThreshold(item)}>
                     {t('setThreshold')}
+                  </button>
+                  <button type="button" className="btn btn-sm btn-danger" onClick={() => onDelete(item)}>
+                    {t('delete')}
                   </button>
                 </div>
               </div>

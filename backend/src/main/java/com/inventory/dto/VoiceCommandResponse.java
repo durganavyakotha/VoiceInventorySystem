@@ -19,4 +19,12 @@ public class VoiceCommandResponse {
     private boolean success;
     private Object data;
     private List<Map<String, Object>> vendors;
+
+    /** Parsed fields for voice-add preview cards */
+    private String productName;
+    private Integer quantity;
+    private String unit;
+    private Double costPerUnit;
+    private Double confidence;
+    private String matchedFrom;
 }

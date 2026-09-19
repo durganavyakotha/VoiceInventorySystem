@@ -194,7 +194,9 @@ public class ChatService {
                 "lastName", other.getLastName(),
                 "email", other.getEmail(),
                 "role", other.getRole().name(),
-                "language", other.getLanguage() != null ? other.getLanguage() : "en"
+                "language", other.getLanguage() != null ? other.getLanguage() : "en",
+                "languageDisplay", com.inventory.util.LanguageNames.toFull(other.getLanguage()),
+                "profileImageUrl", other.getProfileImageUrl() != null ? other.getProfileImageUrl() : ""
         ));
         map.put("createdAt", c.getCreatedAt());
         map.put("updatedAt", c.getUpdatedAt());
@@ -212,6 +214,8 @@ public class ChatService {
         map.put("sourceLanguage", m.getSourceLanguage());
         map.put("targetLanguage", m.getTargetLanguage());
         map.put("translatedText", m.getTranslatedText());
+        map.put("speechLocale", translationService.toSpeechLocale(m.getTargetLanguage()));
+        map.put("sourceSpeechLocale", translationService.toSpeechLocale(m.getSourceLanguage()));
         map.put("audioUrl", m.getAudioUrl());
         map.put("transcript", m.getTranscript());
         map.put("createdAt", m.getCreatedAt());

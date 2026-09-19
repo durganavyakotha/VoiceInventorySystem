@@ -1,5 +1,6 @@
 import { Outlet } from 'react-router-dom';
 import Navbar from './Navbar';
+import VoiceContactFab from './VoiceContactFab';
 
 export default function DashboardLayout({ basePath }) {
   return (
@@ -10,6 +11,7 @@ export default function DashboardLayout({ basePath }) {
           <Outlet />
         </div>
       </main>
+      <VoiceContactFab />
     </div>
   );
 }

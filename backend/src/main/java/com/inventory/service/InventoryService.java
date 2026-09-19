@@ -11,15 +11,19 @@ import com.inventory.enums.TransactionType;
 import com.inventory.repository.InventoryRepository;
 import com.inventory.repository.ProductRepository;
 import com.inventory.repository.StockTransactionRepository;
+import com.inventory.util.FuzzyMatcher;
+import com.inventory.util.ProductAliases;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
@@ -179,17 +183,56 @@ public class InventoryService {
     }
 
     @Transactional
+    public InventoryResponse addStockByProductName(String productName, Integer quantity, String unit) {
+        return addStockByProductName(productName, quantity, unit, null);
+    }
+
+    @Transactional
+    public InventoryResponse addStockByProductName(String productName, Integer quantity, String unit, Double costPerUnit) {
+        User user = userService.getCurrentUser();
+        String resolved = resolveNearName(productName);
+        Product product = findOrCreateProduct(resolved, null, "General",
+                "/uploads/products/placeholder.svg");
+        InventoryItem item = inventoryRepository.findByUserAndProduct(user, product)
+                .orElse(InventoryItem.builder()
+                        .user(user)
+                        .product(product)
+                        .quantity(0)
+                        .unit(normalizeUnit(unit))
+                        .costPerUnit(costPerUnit != null ? costPerUnit : 0.0)
+                        .threshold(5)
+                        .build());
+        item.setQuantity(item.getQuantity() + quantity);
+        if (unit != null && !unit.isBlank()) {
+            item.setUnit(normalizeUnit(unit));
+        }
+        if (costPerUnit != null && costPerUnit > 0) {
+            item.setCostPerUnit(costPerUnit);
+        }
+        item = inventoryRepository.save(item);
+        recordTransaction(user, product, TransactionType.ADD, quantity);
+        checkLowStock(user, item);
+        return InventoryResponse.from(item);
+    }
+
+    @Transactional
     public InventoryResponse removeStockByProductName(String productName, Integer quantity) {
         User user = userService.getCurrentUser();
-        InventoryItem item = inventoryRepository.findByUserIdAndProductNameContaining(user.getId(), productName)
+        String resolved = resolveNearName(productName);
+        InventoryItem item = inventoryRepository.findByUserIdAndProductNameContaining(user.getId(), resolved)
                 .stream()
-                .filter(i -> i.getProduct().getName().equalsIgnoreCase(productName)
-                        || i.getProduct().getName().toLowerCase().contains(productName.toLowerCase()))
+                .filter(i -> {
+                    String n = i.getProduct().getName();
+                    return n.equalsIgnoreCase(resolved)
+                            || n.toLowerCase().contains(resolved.toLowerCase())
+                            || FuzzyMatcher.similarity(
+                            n.toLowerCase(Locale.ROOT), resolved.toLowerCase(Locale.ROOT)) >= 0.78;
+                })
                 .findFirst()
                 .orElseThrow(() -> new RuntimeException("Product not found in inventory: " + productName));
 
         if (item.getQuantity() < quantity) {
-            throw new RuntimeException("Insufficient stock for " + productName);
+            throw new RuntimeException("Insufficient stock for " + item.getProduct().getName());
         }
         item.setQuantity(item.getQuantity() - quantity);
         item = inventoryRepository.save(item);
@@ -198,27 +241,13 @@ public class InventoryService {
         return InventoryResponse.from(item);
     }
 
-    @Transactional
-    public InventoryResponse addStockByProductName(String productName, Integer quantity, String unit) {
-        User user = userService.getCurrentUser();
-        Product product = findOrCreateProduct(productName, null, "General",
-                "/uploads/products/placeholder.svg");
-        InventoryItem item = inventoryRepository.findByUserAndProduct(user, product)
-                .orElse(InventoryItem.builder()
-                        .user(user)
-                        .product(product)
-                        .quantity(0)
-                        .unit(normalizeUnit(unit))
-                        .threshold(5)
-                        .build());
-        item.setQuantity(item.getQuantity() + quantity);
-        if (unit != null && !unit.isBlank()) {
-            item.setUnit(normalizeUnit(unit));
-        }
-        item = inventoryRepository.save(item);
-        recordTransaction(user, product, TransactionType.ADD, quantity);
-        checkLowStock(user, item);
-        return InventoryResponse.from(item);
+    /** Fuzzy + alias resolve against known products. */
+    public String resolveNearName(String raw) {
+        String aliased = ProductAliases.resolve(raw);
+        Set<String> candidates = new HashSet<>(ProductAliases.knownNames());
+        productRepository.findAll().forEach(p -> candidates.add(p.getName()));
+        String best = FuzzyMatcher.bestMatch(aliased, candidates, 0.72);
+        return best != null ? best : aliased;
     }
 
     @Transactional
